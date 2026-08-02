@@ -18,6 +18,9 @@ const (
 	ipv4Version             = 4
 	ipv4MinimumHeaderLength = 20
 	protocolICMP            = 1
+	icmpEchoHeaderLength    = 8
+	icmpEchoRequestType     = 8
+	icmpEchoCode            = 0
 )
 
 type ifreq struct {
@@ -33,6 +36,14 @@ type ipv4Packet struct {
 	source       netip.Addr
 	destination  netip.Addr
 	payload      []byte
+}
+
+type icmpEcho struct {
+	icmpType   uint8
+	code       uint8
+	identifier uint16
+	sequence   uint16
+	data       []byte
 }
 
 func main() {
@@ -83,15 +94,24 @@ func main() {
 		)
 
 		if packet.protocol == protocolICMP {
-			if len(packet.payload) < 2 {
-				log.Printf("invalid ICMP packet: missing type or code")
+			echo, err := parseICMPEcho(packet.payload)
+			if err != nil {
+				log.Printf("invalid ICMP echo packet: %v", err)
+				continue
+			}
+			if echo.icmpType != icmpEchoRequestType || echo.code != icmpEchoCode {
+				log.Printf("ignoring ICMP type=%d code=%d", echo.icmpType, echo.code)
 				continue
 			}
 
-			icmpType := packet.payload[0]
-			icmpCode := packet.payload[1]
-
-			log.Printf("ICMP type=%d code=%d", icmpType, icmpCode)
+			log.Printf(
+				"ICMP type=%d code=%d identifier=%d sequence=%d dataLength=%d",
+				echo.icmpType,
+				echo.code,
+				echo.identifier,
+				echo.sequence,
+				len(echo.data),
+			)
 		}
 	}
 }
@@ -136,6 +156,24 @@ func parseIPv4Packet(data []byte) (ipv4Packet, error) {
 		source:       netip.AddrFrom4([4]byte(data[12:16])),
 		destination:  netip.AddrFrom4([4]byte(data[16:20])),
 		payload:      data[headerLength:totalLength],
+	}, nil
+}
+
+func parseICMPEcho(data []byte) (icmpEcho, error) {
+	if len(data) < icmpEchoHeaderLength {
+		return icmpEcho{}, fmt.Errorf("ICMP echo packet too short: %d bytes", len(data))
+	}
+
+	if checksum := internetChecksum(data); checksum != 0 {
+		return icmpEcho{}, fmt.Errorf("invalid ICMP checksum: %#04x", checksum)
+	}
+
+	return icmpEcho{
+		icmpType:   data[0],
+		code:       data[1],
+		identifier: binary.BigEndian.Uint16(data[4:6]),
+		sequence:   binary.BigEndian.Uint16(data[6:8]),
+		data:       data[icmpEchoHeaderLength:],
 	}, nil
 }
 
