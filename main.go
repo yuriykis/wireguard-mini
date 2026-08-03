@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"net/netip"
 	"os"
@@ -19,6 +20,7 @@ const (
 	ipv4MinimumHeaderLength = 20
 	protocolICMP            = 1
 	icmpEchoHeaderLength    = 8
+	icmpEchoReplyType       = 0
 	icmpEchoRequestType     = 8
 	icmpEchoCode            = 0
 )
@@ -112,6 +114,28 @@ func main() {
 				echo.sequence,
 				len(echo.data),
 			)
+
+			icmpReply, err := buildICMPEchoReply(packet.payload)
+			if err != nil {
+				log.Printf("could not build ICMP echo reply: %v", err)
+				continue
+			}
+
+			ipv4Reply, err := buildIPv4Reply(buf[:n], icmpReply)
+			if err != nil {
+				log.Printf("could not build IPv4 reply: %v", err)
+				continue
+			}
+
+			written, err := file.Write(ipv4Reply)
+			if err != nil {
+				log.Printf("could not write IPv4 reply to TUN: %v", err)
+				continue
+			}
+			if written != len(ipv4Reply) {
+				log.Printf("could not write IPv4 reply to TUN: %v", io.ErrShortWrite)
+				continue
+			}
 		}
 	}
 }
@@ -177,6 +201,52 @@ func parseICMPEcho(data []byte) (icmpEcho, error) {
 	}, nil
 }
 
+func buildICMPEchoReply(request []byte) ([]byte, error) {
+	echo, err := parseICMPEcho(request)
+	if err != nil {
+		return nil, err
+	}
+	if echo.icmpType != icmpEchoRequestType || echo.code != icmpEchoCode {
+		return nil, fmt.Errorf("not an ICMP echo request: type=%d code=%d", echo.icmpType, echo.code)
+	}
+
+	reply := append([]byte(nil), request...)
+	reply[0] = icmpEchoReplyType
+	// The checksum field must be zero while calculating the ICMP checksum.
+	binary.BigEndian.PutUint16(reply[2:4], 0)
+	binary.BigEndian.PutUint16(reply[2:4], internetChecksum(reply))
+
+	return reply, nil
+}
+
+func buildIPv4Reply(request []byte, payload []byte) ([]byte, error) {
+	packet, err := parseIPv4Packet(request)
+	if err != nil {
+		return nil, err
+	}
+
+	totalLength := packet.headerLength + len(payload)
+	if totalLength > 0xffff {
+		return nil, fmt.Errorf("IPv4 reply too large: %d bytes", totalLength)
+	}
+
+	reply := make([]byte, totalLength)
+	// Preserve the original IPv4 header, including any options after the first 20 bytes.
+	copy(reply[:packet.headerLength], request[:packet.headerLength])
+	copy(reply[packet.headerLength:], payload)
+
+	// Swap the 4-byte IPv4 source (12:16) and destination (16:20) addresses.
+	copy(reply[12:16], request[16:20])
+	copy(reply[16:20], request[12:16])
+
+	binary.BigEndian.PutUint16(reply[2:4], uint16(totalLength))
+	// The checksum field must be zero while calculating the IPv4 header checksum.
+	binary.BigEndian.PutUint16(reply[10:12], 0)
+	binary.BigEndian.PutUint16(reply[10:12], internetChecksum(reply[:packet.headerLength]))
+
+	return reply, nil
+}
+
 func internetChecksum(data []byte) uint16 {
 	var sum uint32
 
@@ -186,9 +256,11 @@ func internetChecksum(data []byte) uint16 {
 	}
 
 	if len(data) == 1 {
+		// The final odd byte is the high-order byte of a 16-bit word.
 		sum += uint32(data[0]) << 8
 	}
 
+	// Add every carry back into the low 16 bits (one's-complement addition).
 	for sum>>16 != 0 {
 		sum = (sum & 0xffff) + (sum >> 16)
 	}
