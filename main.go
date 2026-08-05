@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/netip"
 	"os"
 	"syscall"
@@ -49,6 +51,33 @@ type icmpEcho struct {
 }
 
 func main() {
+	listenFlag := flag.String("listen", "", "local UDP address (for example 192.0.2.1:51820)")
+	peerFlag := flag.String("peer", "", "peer UDP endpoint (for example 192.0.2.2:51820)")
+	flag.Parse()
+
+	if *listenFlag == "" {
+		log.Fatal("-listen is required")
+	}
+	if *peerFlag == "" {
+		log.Fatal("-peer is required")
+	}
+
+	listenAddr, err := net.ResolveUDPAddr("udp4", *listenFlag)
+	if err != nil {
+		log.Fatalf("invalid -listen address: %v", err)
+	}
+	peerAddr, err := net.ResolveUDPAddr("udp4", *peerFlag)
+	if err != nil {
+		log.Fatalf("invalid -peer address: %v", err)
+	}
+
+	udpConn, err := net.ListenUDP("udp4", listenAddr)
+	if err != nil {
+		log.Fatalf("could not listen on UDP %s: %v", listenAddr, err)
+	}
+	defer udpConn.Close()
+	log.Printf("UDP listening on %s, peer %s", udpConn.LocalAddr(), peerAddr)
+
 	file, err := os.OpenFile("/dev/net/tun", os.O_RDWR, 0)
 	if err != nil {
 		log.Fatal(err)
