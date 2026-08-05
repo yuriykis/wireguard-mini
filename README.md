@@ -13,8 +13,8 @@ The program currently:
 
 - creates a Linux TUN interface named `tun0` using `IFF_TUN | IFF_NO_PI`;
 - parses and validates IPv4 packets;
-- parses ICMP echo requests;
-- generates ICMP echo replies in userspace;
+- forwards IPv4 packets read from TUN as UDP payloads to a configured peer;
+- includes tested helpers for parsing ICMP echo requests and building replies;
 - validates and calculates IPv4 and ICMP checksums.
 
 Unit tests cover packet parsing, checksum calculation, and echo reply creation.
