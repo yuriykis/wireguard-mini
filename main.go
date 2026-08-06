@@ -43,6 +43,10 @@ func main() {
 	}
 	defer file.Close()
 	log.Print("tun0 created, Ctrl-C to remove it")
+	if err := tun.SetMTU("tun0", 1420); err != nil {
+		log.Fatal(err)
+	}
+	log.Print("tun0 MTU set to 1420")
 
 	buf := make([]byte, 65535)
 
