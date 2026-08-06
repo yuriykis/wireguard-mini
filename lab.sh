@@ -6,8 +6,6 @@ readonly LEFT_NS="wgmini-left"
 readonly RIGHT_NS="wgmini-right"
 readonly LEFT_VETH="veth-left"
 readonly RIGHT_VETH="veth-right"
-readonly TUN_NAME="tun0"
-readonly TUN_MTU="1420"
 
 usage() {
 	cat <<EOF
@@ -52,17 +50,9 @@ up() {
 	sudo ip -n "$LEFT_NS" link set lo up
 	sudo ip -n "$RIGHT_NS" link set lo up
 
-	sudo ip -n "$LEFT_NS" tuntap add dev "$TUN_NAME" mode tun
-	sudo ip -n "$RIGHT_NS" tuntap add dev "$TUN_NAME" mode tun
-	sudo ip -n "$LEFT_NS" addr add 10.0.0.1/24 dev "$TUN_NAME"
-	sudo ip -n "$RIGHT_NS" addr add 10.0.0.2/24 dev "$TUN_NAME"
-	sudo ip -n "$LEFT_NS" link set "$TUN_NAME" mtu "$TUN_MTU" up
-	sudo ip -n "$RIGHT_NS" link set "$TUN_NAME" mtu "$TUN_MTU" up
-
 	trap - ERR
 	echo "lab is up"
 	echo "underlay: 192.0.2.1 ($LEFT_NS) <-> 192.0.2.2 ($RIGHT_NS)"
-	echo "tunnel:   10.0.0.1 ($LEFT_NS) <-> 10.0.0.2 ($RIGHT_NS)"
 }
 
 status() {

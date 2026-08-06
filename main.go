@@ -12,6 +12,7 @@ import (
 func main() {
 	listenFlag := flag.String("listen", "", "local UDP address (for example 192.0.2.1:51820)")
 	peerFlag := flag.String("peer", "", "peer UDP endpoint (for example 192.0.2.2:51820)")
+	tunAddressFlag := flag.String("tun-address", "", "local TUN IPv4 address (for example 10.0.0.1/24)")
 	flag.Parse()
 
 	if *listenFlag == "" {
@@ -19,6 +20,18 @@ func main() {
 	}
 	if *peerFlag == "" {
 		log.Fatal("-peer is required")
+	}
+	if *tunAddressFlag == "" {
+		log.Fatal("-tun-address is required")
+	}
+
+	tunIP, tunNetwork, err := net.ParseCIDR(*tunAddressFlag)
+	if err != nil {
+		log.Fatalf("invalid -tun-address: %v", err)
+	}
+	_, addressBits := tunNetwork.Mask.Size()
+	if tunIP.To4() == nil || addressBits != 32 {
+		log.Fatal("-tun-address must be an IPv4 CIDR")
 	}
 
 	listenAddr, err := net.ResolveUDPAddr("udp4", *listenFlag)
@@ -47,6 +60,14 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Print("tun0 MTU set to 1420")
+	if err := tun.SetIPv4Address("tun0", tunIP, tunNetwork.Mask); err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("tun0 address set to %s", *tunAddressFlag)
+	if err := tun.SetUp("tun0"); err != nil {
+		log.Fatal(err)
+	}
+	log.Print("tun0 is up")
 
 	buf := make([]byte, 65535)
 
