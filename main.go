@@ -5,22 +5,9 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
-	"syscall"
-	"unsafe"
-)
 
-const (
-	tunsetiff = 0x400454ca // TUNSETIFF from <linux/if_tun.h>
-	iffTun    = 0x0001     // IFF_TUN
-	iffNoPI   = 0x1000     // IFF_NO_PI
+	"wireguard-mini/tun"
 )
-
-type ifreq struct {
-	name  [16]byte
-	flags uint16
-	_     [22]byte
-}
 
 func main() {
 	listenFlag := flag.String("listen", "", "local UDP address (for example 192.0.2.1:51820)")
@@ -50,25 +37,11 @@ func main() {
 	defer udpConn.Close()
 	log.Printf("UDP listening on %s, peer %s", udpConn.LocalAddr(), peerAddr)
 
-	file, err := os.OpenFile("/dev/net/tun", os.O_RDWR, 0)
+	file, err := tun.Open("tun0")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer file.Close()
-
-	var req ifreq
-	copy(req.name[:], "tun0")
-	req.flags = iffTun | iffNoPI
-
-	_, _, errno := syscall.Syscall(
-		syscall.SYS_IOCTL,
-		file.Fd(),
-		tunsetiff,
-		uintptr(unsafe.Pointer(&req)), // should be directly here, not p := uintptr(unsafe.Pointer(&req))
-	)
-	if errno != 0 {
-		log.Fatal(errno)
-	}
 	log.Print("tun0 created, Ctrl-C to remove it")
 
 	buf := make([]byte, 65535)
