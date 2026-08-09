@@ -49,6 +49,7 @@ func main() {
 	}
 	defer udpConn.Close()
 	log.Printf("UDP listening on %s, peer %s", udpConn.LocalAddr(), peerAddr)
+	go receiveUDPPackets(udpConn)
 
 	file, err := tun.Open("tun0")
 	if err != nil {
@@ -104,5 +105,32 @@ func main() {
 			continue
 		}
 		log.Printf("sent=%d peer=%s", written, peerAddr)
+	}
+}
+
+func receiveUDPPackets(conn *net.UDPConn) {
+	buf := make([]byte, 65535)
+
+	for {
+		n, source, err := conn.ReadFromUDP(buf)
+		if err != nil {
+			log.Printf("could not receive packet from UDP: %v", err)
+			return
+		}
+
+		packet, err := parseIPv4Packet(buf[:n])
+		if err != nil {
+			log.Printf("invalid packet from UDP peer %s: %v", source, err)
+			continue
+		}
+
+		log.Printf(
+			"received=%d peer=%s protocol=%d source=%s destination=%s",
+			n,
+			source,
+			packet.protocol,
+			packet.source,
+			packet.destination,
+		)
 	}
 }
