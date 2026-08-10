@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 
 	"wireguard-mini/tun"
 )
@@ -49,7 +50,6 @@ func main() {
 	}
 	defer udpConn.Close()
 	log.Printf("UDP listening on %s, peer %s", udpConn.LocalAddr(), peerAddr)
-	go receiveUDPPackets(udpConn)
 
 	file, err := tun.Open("tun0")
 	if err != nil {
@@ -69,6 +69,7 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Print("tun0 is up")
+	go receiveUDPPackets(udpConn, file)
 
 	buf := make([]byte, 65535)
 
@@ -108,7 +109,7 @@ func main() {
 	}
 }
 
-func receiveUDPPackets(conn *net.UDPConn) {
+func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File) {
 	buf := make([]byte, 65535)
 
 	for {
@@ -132,5 +133,16 @@ func receiveUDPPackets(conn *net.UDPConn) {
 			packet.source,
 			packet.destination,
 		)
+
+		written, err := tunFile.Write(buf[:n])
+		if err != nil {
+			log.Printf("could not write packet to TUN: %v", err)
+			continue
+		}
+		if written != n {
+			log.Printf("could not write packet to TUN: %v", io.ErrShortWrite)
+			continue
+		}
+		log.Printf("written=%d to=tun0", written)
 	}
 }
