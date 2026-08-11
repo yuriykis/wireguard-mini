@@ -1,6 +1,7 @@
 package tun
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -55,8 +56,7 @@ func Open(name string) (*os.File, error) {
 		uintptr(unsafe.Pointer(&req)),
 	)
 	if errno != 0 {
-		file.Close()
-		return nil, errno
+		return nil, errors.Join(errno, file.Close())
 	}
 
 	return file, nil
@@ -67,7 +67,9 @@ func SetMTU(name string, mtu int) error {
 	if err != nil {
 		return err
 	}
-	defer syscall.Close(socket)
+	defer func() {
+		_ = syscall.Close(socket)
+	}()
 
 	var req ifreqMTU
 	copy(req.name[:], name)
@@ -100,7 +102,9 @@ func SetIPv4Address(name string, ip net.IP, mask net.IPMask) error {
 	if err != nil {
 		return err
 	}
-	defer syscall.Close(socket)
+	defer func() {
+		_ = syscall.Close(socket)
+	}()
 
 	if err := setIPv4(socket, siocsifaddr, name, ipv4); err != nil {
 		return err
@@ -117,7 +121,9 @@ func SetUp(name string) error {
 	if err != nil {
 		return err
 	}
-	defer syscall.Close(socket)
+	defer func() {
+		_ = syscall.Close(socket)
+	}()
 
 	var req ifreq
 	copy(req.name[:], name)

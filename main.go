@@ -48,14 +48,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("could not listen on UDP %s: %v", listenAddr, err)
 	}
-	defer udpConn.Close()
+	defer func() {
+		if err := udpConn.Close(); err != nil {
+			log.Printf("could not close UDP socket: %v", err)
+		}
+	}()
 	log.Printf("UDP listening on %s, peer %s", udpConn.LocalAddr(), peerAddr)
 
 	file, err := tun.Open("tun0")
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("could not close tun0: %v", err)
+		}
+	}()
 	log.Print("tun0 created, Ctrl-C to remove it")
 	if err := tun.SetMTU("tun0", 1420); err != nil {
 		log.Fatal(err)
