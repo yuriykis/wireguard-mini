@@ -14,3 +14,11 @@ func Test() error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
+
+// Lint runs golangci-lint on all packages.
+func Lint() error {
+	cmd := exec.Command("golangci-lint", "run", "./...")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
