@@ -22,4 +22,7 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Run tests
-        run: go test ./...
+        uses: magefile/mage-action@v4
+        with:
+          version: v1.17.2
+          args: test
