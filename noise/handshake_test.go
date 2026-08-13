@@ -21,3 +21,16 @@ func TestNewHandshakeState(t *testing.T) {
 		hex.EncodeToString(state.Hash[:]),
 	)
 }
+
+func TestMixHash(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	chainingKeyBefore := state.ChainingKey
+
+	state.mixHash([]byte{1, 2, 3})
+
+	require.Equal(t,
+		"9bd1c5f9faf06d2e88b162d6e77ed1d76f01b5b02b5a115901f9cc19d3922458",
+		hex.EncodeToString(state.Hash[:]),
+	)
+	require.Equal(t, chainingKeyBefore, state.ChainingKey)
+}

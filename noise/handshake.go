@@ -25,15 +25,19 @@ func NewHandshakeState(responderPublicKey PublicKey) HandshakeState {
 	hashInput := make([]byte, 0, len(chainingKey)+len(wireGuardIdentifier))
 	hashInput = append(hashInput, chainingKey[:]...)
 	hashInput = append(hashInput, wireGuardIdentifier...)
-	handshakeHash := blake2s.Sum256(hashInput)
-
-	hashInput = make([]byte, 0, len(handshakeHash)+len(responderPublicKey))
-	hashInput = append(hashInput, handshakeHash[:]...)
-	hashInput = append(hashInput, responderPublicKey[:]...)
-	handshakeHash = blake2s.Sum256(hashInput)
-
-	return HandshakeState{
-		Hash:        handshakeHash,
+	state := HandshakeState{
+		Hash:        blake2s.Sum256(hashInput),
 		ChainingKey: chainingKey,
 	}
+	state.mixHash(responderPublicKey[:])
+	return state
+}
+
+// mixHash appends data to the transcript by hashing the current handshake hash
+// together with the new bytes.
+func (state *HandshakeState) mixHash(data []byte) {
+	hashInput := make([]byte, 0, len(state.Hash)+len(data))
+	hashInput = append(hashInput, state.Hash[:]...)
+	hashInput = append(hashInput, data...)
+	state.Hash = blake2s.Sum256(hashInput)
 }
