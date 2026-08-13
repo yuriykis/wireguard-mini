@@ -1,6 +1,11 @@
 package noise
 
-import "golang.org/x/crypto/blake2s"
+import (
+	"crypto/hmac"
+	"hash"
+
+	"golang.org/x/crypto/blake2s"
+)
 
 const (
 	HashSize        = 32
@@ -40,4 +45,27 @@ func (state *HandshakeState) mixHash(data []byte) {
 	hashInput = append(hashInput, state.Hash[:]...)
 	hashInput = append(hashInput, data...)
 	state.Hash = blake2s.Sum256(hashInput)
+}
+
+// mixKey uses WireGuard's single-output KDF to mix input into the chaining key.
+func (state *HandshakeState) mixKey(input []byte) {
+	temporary := hmacBlake2s(state.ChainingKey[:], input)
+	state.ChainingKey = hmacBlake2s(temporary[:], []byte{1})
+}
+
+func hmacBlake2s(key, input []byte) [HashSize]byte {
+	mac := hmac.New(newBlake2s256, key)
+	_, _ = mac.Write(input)
+
+	var result [HashSize]byte
+	copy(result[:], mac.Sum(nil))
+	return result
+}
+
+func newBlake2s256() hash.Hash {
+	hasher, err := blake2s.New256(nil)
+	if err != nil {
+		panic("create unkeyed BLAKE2s-256: " + err.Error())
+	}
+	return hasher
 }

@@ -34,3 +34,17 @@ func TestMixHash(t *testing.T) {
 	)
 	require.Equal(t, chainingKeyBefore, state.ChainingKey)
 }
+
+func TestMixKey(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	hashBefore := state.Hash
+	ephemeralPublicKey := PublicKey{9}
+
+	state.mixKey(ephemeralPublicKey[:])
+
+	require.Equal(t,
+		"394f055beb127aba9d424e2196e0bb2bfa08846ba4d3739600ff8bbd4dc4c7e6",
+		hex.EncodeToString(state.ChainingKey[:]),
+	)
+	require.Equal(t, hashBefore, state.Hash)
+}
