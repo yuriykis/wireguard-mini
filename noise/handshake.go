@@ -100,6 +100,22 @@ func (state *HandshakeState) encryptInitiationStatic(
 	return nil
 }
 
+// deriveInitiationTimestampEncryptionKey performs ECDH between the
+// initiator's and responder's static keys. It mixes the resulting shared
+// secret into the handshake and returns the key that will encrypt the
+// initiation timestamp.
+func (state *HandshakeState) deriveInitiationTimestampEncryptionKey(
+	initiatorStaticPrivate PrivateKey,
+	responderStaticPublic PublicKey,
+) ([HashSize]byte, error) {
+	sharedSecret, err := initiatorStaticPrivate.SharedSecret(responderStaticPublic)
+	if err != nil {
+		return [HashSize]byte{}, err
+	}
+
+	return state.mixKeyAndGetEncryptionKey(sharedSecret[:]), nil
+}
+
 // mixHash appends data to the transcript by hashing the current handshake hash
 // together with the new bytes.
 func (state *HandshakeState) mixHash(data []byte) {

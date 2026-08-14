@@ -104,6 +104,48 @@ func TestEncryptInitiationStatic(t *testing.T) {
 	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
 }
 
+func TestDeriveInitiationTimestampEncryptionKey(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorStaticPublic, err := initiatorStaticPrivate.PublicKey()
+	require.NoError(t, err)
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
+
+	state := NewHandshakeState(responderStaticPublic)
+	message := HandshakeInitiation{}
+	ephemeralPrivate, err := state.setInitiationEphemeral(&message)
+	require.NoError(t, err)
+	staticEncryptionKey, err := state.deriveInitiationStaticEncryptionKey(
+		ephemeralPrivate,
+		responderStaticPublic,
+	)
+	require.NoError(t, err)
+	err = state.encryptInitiationStatic(
+		&message,
+		staticEncryptionKey,
+		initiatorStaticPublic,
+	)
+	require.NoError(t, err)
+	hashBefore := state.Hash
+	expectedState := state
+
+	timestampEncryptionKey, err := state.deriveInitiationTimestampEncryptionKey(
+		initiatorStaticPrivate,
+		responderStaticPublic,
+	)
+
+	require.NoError(t, err)
+	sharedSecret, err := responderStaticPrivate.SharedSecret(initiatorStaticPublic)
+	require.NoError(t, err)
+	expectedTimestampEncryptionKey := expectedState.mixKeyAndGetEncryptionKey(sharedSecret[:])
+	require.Equal(t, expectedTimestampEncryptionKey, timestampEncryptionKey)
+	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
+	require.Equal(t, hashBefore, state.Hash)
+}
+
 func TestMixHash(t *testing.T) {
 	state := NewHandshakeState(PublicKey{9})
 	chainingKeyBefore := state.ChainingKey
