@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 func TestNewHandshakeState(t *testing.T) {
@@ -68,6 +69,39 @@ func TestDeriveInitiationStaticEncryptionKey(t *testing.T) {
 	require.Equal(t, expectedEncryptionKey, encryptionKey)
 	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
 	require.Equal(t, hashBefore, state.Hash)
+}
+
+func TestEncryptInitiationStatic(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	hashBefore := state.Hash
+	expectedState := state
+	message := HandshakeInitiation{}
+	encryptionKey := [HashSize]byte{1}
+	initiatorStaticPublic := PublicKey{2}
+
+	err := state.encryptInitiationStatic(
+		&message,
+		encryptionKey,
+		initiatorStaticPublic,
+	)
+
+	require.NoError(t, err)
+	require.NotEqual(t, [48]byte{}, message.EncryptedStatic)
+	aead, err := chacha20poly1305.New(encryptionKey[:])
+	require.NoError(t, err)
+	var nonce [chacha20poly1305.NonceSize]byte
+	decryptedStatic, err := aead.Open(
+		nil,
+		nonce[:],
+		message.EncryptedStatic[:],
+		hashBefore[:],
+	)
+	require.NoError(t, err)
+	require.Equal(t, initiatorStaticPublic[:], decryptedStatic)
+
+	expectedState.mixHash(message.EncryptedStatic[:])
+	require.Equal(t, expectedState.Hash, state.Hash)
+	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
 }
 
 func TestMixHash(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"hash"
 
 	"golang.org/x/crypto/blake2s"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 const (
@@ -72,6 +73,31 @@ func (state *HandshakeState) deriveInitiationStaticEncryptionKey(
 	}
 
 	return state.mixKeyAndGetEncryptionKey(sharedSecret[:]), nil
+}
+
+// encryptInitiationStatic encrypts the initiator's static public key and
+// authenticates it against the handshake hash accumulated so far. WireGuard
+// uses counter zero here, which produces an all-zero ChaCha20-Poly1305 nonce.
+func (state *HandshakeState) encryptInitiationStatic(
+	message *HandshakeInitiation,
+	encryptionKey [HashSize]byte,
+	initiatorStaticPublic PublicKey,
+) error {
+	aead, err := chacha20poly1305.New(encryptionKey[:])
+	if err != nil {
+		return err
+	}
+
+	var nonce [chacha20poly1305.NonceSize]byte
+	encryptedStatic := aead.Seal(
+		nil,
+		nonce[:],
+		initiatorStaticPublic[:],
+		state.Hash[:],
+	)
+	copy(message.EncryptedStatic[:], encryptedStatic)
+	state.mixHash(message.EncryptedStatic[:])
+	return nil
 }
 
 // mixHash appends data to the transcript by hashing the current handshake hash
