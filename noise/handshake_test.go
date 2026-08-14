@@ -22,6 +22,27 @@ func TestNewHandshakeState(t *testing.T) {
 	)
 }
 
+func TestSetInitiationEphemeral(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	expectedState := state
+	message := HandshakeInitiation{SenderIndex: 42}
+
+	ephemeralPrivate, err := state.setInitiationEphemeral(&message)
+
+	require.NoError(t, err)
+	ephemeralPublic, err := ephemeralPrivate.PublicKey()
+	require.NoError(t, err)
+	require.Equal(t, ephemeralPublic[:], message.UnencryptedEphemeral[:])
+
+	expectedState.mixHash(message.UnencryptedEphemeral[:])
+	expectedState.mixKey(message.UnencryptedEphemeral[:])
+	require.Equal(t, expectedState.Hash, state.Hash)
+	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
+	require.Equal(t, uint32(42), message.SenderIndex)
+	require.Equal(t, [48]byte{}, message.EncryptedStatic)
+	require.Equal(t, [28]byte{}, message.EncryptedTimestamp)
+}
+
 func TestMixHash(t *testing.T) {
 	state := NewHandshakeState(PublicKey{9})
 	chainingKeyBefore := state.ChainingKey

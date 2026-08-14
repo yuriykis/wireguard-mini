@@ -38,6 +38,26 @@ func NewHandshakeState(responderPublicKey PublicKey) HandshakeState {
 	return state
 }
 
+// setInitiationEphemeral generates the initiator's ephemeral key pair, puts
+// the public key in the message, and mixes that public value into the Noise
+// handshake state. The private key is returned for the following ECDH step.
+func (state *HandshakeState) setInitiationEphemeral(message *HandshakeInitiation) (PrivateKey, error) {
+	ephemeralPrivate, err := GeneratePrivateKey()
+	if err != nil {
+		return PrivateKey{}, err
+	}
+
+	ephemeralPublic, err := ephemeralPrivate.PublicKey()
+	if err != nil {
+		return PrivateKey{}, err
+	}
+
+	copy(message.UnencryptedEphemeral[:], ephemeralPublic[:])
+	state.mixHash(message.UnencryptedEphemeral[:])
+	state.mixKey(message.UnencryptedEphemeral[:])
+	return ephemeralPrivate, nil
+}
+
 // mixHash appends data to the transcript by hashing the current handshake hash
 // together with the new bytes.
 func (state *HandshakeState) mixHash(data []byte) {
