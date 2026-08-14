@@ -58,6 +58,22 @@ func (state *HandshakeState) setInitiationEphemeral(message *HandshakeInitiation
 	return ephemeralPrivate, nil
 }
 
+// deriveInitiationStaticEncryptionKey performs ECDH between the initiator's
+// ephemeral private key and the responder's static public key. It mixes the
+// resulting shared secret into the handshake and returns the key that will
+// encrypt the initiator's static public key.
+func (state *HandshakeState) deriveInitiationStaticEncryptionKey(
+	ephemeralPrivate PrivateKey,
+	responderStaticPublic PublicKey,
+) ([HashSize]byte, error) {
+	sharedSecret, err := ephemeralPrivate.SharedSecret(responderStaticPublic)
+	if err != nil {
+		return [HashSize]byte{}, err
+	}
+
+	return state.mixKeyAndGetEncryptionKey(sharedSecret[:]), nil
+}
+
 // mixHash appends data to the transcript by hashing the current handshake hash
 // together with the new bytes.
 func (state *HandshakeState) mixHash(data []byte) {

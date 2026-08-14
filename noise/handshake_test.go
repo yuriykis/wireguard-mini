@@ -43,6 +43,33 @@ func TestSetInitiationEphemeral(t *testing.T) {
 	require.Equal(t, [28]byte{}, message.EncryptedTimestamp)
 }
 
+func TestDeriveInitiationStaticEncryptionKey(t *testing.T) {
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
+	state := NewHandshakeState(responderStaticPublic)
+	message := HandshakeInitiation{}
+	ephemeralPrivate, err := state.setInitiationEphemeral(&message)
+	require.NoError(t, err)
+	hashBefore := state.Hash
+	expectedState := state
+
+	encryptionKey, err := state.deriveInitiationStaticEncryptionKey(
+		ephemeralPrivate,
+		responderStaticPublic,
+	)
+
+	require.NoError(t, err)
+	ephemeralPublic := PublicKey(message.UnencryptedEphemeral)
+	sharedSecret, err := responderStaticPrivate.SharedSecret(ephemeralPublic)
+	require.NoError(t, err)
+	expectedEncryptionKey := expectedState.mixKeyAndGetEncryptionKey(sharedSecret[:])
+	require.Equal(t, expectedEncryptionKey, encryptionKey)
+	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
+	require.Equal(t, hashBefore, state.Hash)
+}
+
 func TestMixHash(t *testing.T) {
 	state := NewHandshakeState(PublicKey{9})
 	chainingKeyBefore := state.ChainingKey
