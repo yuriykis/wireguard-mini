@@ -53,6 +53,18 @@ func (state *HandshakeState) mixKey(input []byte) {
 	state.ChainingKey = hmacBlake2s(temporary[:], []byte{1})
 }
 
+// mixKeyAndGetEncryptionKey uses WireGuard's two-output KDF. It mixes input
+// into the chaining key and returns a separate key for an AEAD operation.
+func (state *HandshakeState) mixKeyAndGetEncryptionKey(input []byte) [HashSize]byte {
+	temporary := hmacBlake2s(state.ChainingKey[:], input)
+	state.ChainingKey = hmacBlake2s(temporary[:], []byte{1})
+
+	keyInput := make([]byte, 0, len(state.ChainingKey)+1)
+	keyInput = append(keyInput, state.ChainingKey[:]...)
+	keyInput = append(keyInput, 2)
+	return hmacBlake2s(temporary[:], keyInput)
+}
+
 func hmacBlake2s(key, input []byte) [HashSize]byte {
 	mac := hmac.New(newBlake2s256, key)
 	_, _ = mac.Write(input)

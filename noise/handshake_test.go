@@ -48,3 +48,20 @@ func TestMixKey(t *testing.T) {
 	)
 	require.Equal(t, hashBefore, state.Hash)
 }
+
+func TestMixKeyAndGetEncryptionKey(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	hashBefore := state.Hash
+
+	encryptionKey := state.mixKeyAndGetEncryptionKey([]byte{1, 2, 3})
+
+	require.Equal(t,
+		"392064a312d512fc32d7a176879d306885d000aaecd19a05a143d6bbdd6ab7a0",
+		hex.EncodeToString(state.ChainingKey[:]),
+	)
+	require.Equal(t,
+		"c20abf72ebebd5c884c1ea79458a2038a2b1da673d3de47a6e29913e096bdbb8",
+		hex.EncodeToString(encryptionKey[:]),
+	)
+	require.Equal(t, hashBefore, state.Hash)
+}
