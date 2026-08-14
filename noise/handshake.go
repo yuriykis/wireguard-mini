@@ -116,6 +116,30 @@ func (state *HandshakeState) deriveInitiationTimestampEncryptionKey(
 	return state.mixKeyAndGetEncryptionKey(sharedSecret[:]), nil
 }
 
+// encryptInitiationTimestamp encrypts the TAI64N timestamp and authenticates
+// it against the handshake hash accumulated so far.
+func (state *HandshakeState) encryptInitiationTimestamp(
+	message *HandshakeInitiation,
+	encryptionKey [HashSize]byte,
+	timestamp tai64nTimestamp,
+) error {
+	aead, err := chacha20poly1305.New(encryptionKey[:])
+	if err != nil {
+		return err
+	}
+
+	var nonce [chacha20poly1305.NonceSize]byte
+	encryptedTimestamp := aead.Seal(
+		nil,
+		nonce[:],
+		timestamp[:],
+		state.Hash[:],
+	)
+	copy(message.EncryptedTimestamp[:], encryptedTimestamp)
+	state.mixHash(message.EncryptedTimestamp[:])
+	return nil
+}
+
 // mixHash appends data to the transcript by hashing the current handshake hash
 // together with the new bytes.
 func (state *HandshakeState) mixHash(data []byte) {
