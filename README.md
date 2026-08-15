@@ -31,7 +31,7 @@ The program is Linux-only and needs permission to create and configure a TUN
 interface, for example by running the built binary with `sudo`.
 
 ```sh
-go build -o bin/wireguard-mini .
+mage build
 sudo ./bin/wireguard-mini \
   -listen 192.0.2.1:51820 \
   -peer 192.0.2.2:51820 \
