@@ -117,6 +117,28 @@ func TestBuildICMPEchoReply(t *testing.T) {
 	require.Zero(t, internetChecksum(reply))
 }
 
+func TestBuildICMPEchoReplyRejectsNonRequest(t *testing.T) {
+	tests := []struct {
+		name     string
+		icmpType byte
+		code     byte
+	}{
+		{name: "echo reply", icmpType: icmpEchoReplyType, code: icmpEchoCode},
+		{name: "non-zero code", icmpType: icmpEchoRequestType, code: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			packet := []byte{tt.icmpType, tt.code, 0, 0, 0x12, 0x34, 0, 1}
+			binary.BigEndian.PutUint16(packet[2:4], internetChecksum(packet))
+
+			_, err := buildICMPEchoReply(packet)
+
+			require.ErrorContains(t, err, "not an ICMP echo request")
+		})
+	}
+}
+
 func TestBuildIPv4Reply(t *testing.T) {
 	requestPayload := []byte{8, 0, 0xfd, 0xf0, 0x12, 0x34, 0, 1, 't', 'e', 's', 't'}
 	request := validIPv4Packet(requestPayload)
