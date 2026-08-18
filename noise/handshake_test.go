@@ -189,3 +189,23 @@ func TestMixKeyAndGetEncryptionKey(t *testing.T) {
 	)
 	require.Equal(t, hashBefore, state.Hash)
 }
+
+func TestDeriveMAC1Key(t *testing.T) {
+	key := deriveMAC1Key(PublicKey{9})
+
+	require.Equal(t,
+		"a58c8d76d9b6b46b858c5beeb096da9a6dbae987b17cd68b373a350547873779",
+		hex.EncodeToString(key[:]),
+	)
+}
+
+func TestCalculateMAC1(t *testing.T) {
+	mac1Key := deriveMAC1Key(PublicKey{9})
+
+	mac1 := calculateMAC1(mac1Key, []byte{1, 2, 3})
+
+	require.Equal(t,
+		"e26e552b977dff4253651d289a979a98",
+		hex.EncodeToString(mac1[:]),
+	)
+}

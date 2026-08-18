@@ -14,6 +14,7 @@ const (
 
 	noiseConstruction   = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s"
 	wireGuardIdentifier = "WireGuard v1 zx2c4 Jason@zx2c4.com"
+	labelMAC1           = "mac1----"
 )
 
 // HandshakeState contains the two evolving 32-byte values used by Noise
@@ -165,6 +166,28 @@ func (state *HandshakeState) mixKeyAndGetEncryptionKey(input []byte) [HashSize]b
 	keyInput = append(keyInput, state.ChainingKey[:]...)
 	keyInput = append(keyInput, 2)
 	return hmacBlake2s(temporary[:], keyInput)
+}
+
+// deriveMAC1Key binds MAC1 to the responder's static identity.
+func deriveMAC1Key(responderPublicKey PublicKey) [HashSize]byte {
+	input := make([]byte, 0, len(labelMAC1)+len(responderPublicKey))
+	input = append(input, labelMAC1...)
+	input = append(input, responderPublicKey[:]...)
+	return blake2s.Sum256(input)
+}
+
+// calculateMAC1 authenticates data with keyed BLAKE2s and returns its
+// 16-byte output required by the WireGuard message format.
+func calculateMAC1(mac1Key [HashSize]byte, data []byte) [16]byte {
+	mac, err := blake2s.New128(mac1Key[:])
+	if err != nil {
+		panic("create keyed BLAKE2s-128: " + err.Error())
+	}
+	_, _ = mac.Write(data)
+
+	var result [16]byte
+	copy(result[:], mac.Sum(nil))
+	return result
 }
 
 func hmacBlake2s(key, input []byte) [HashSize]byte {
