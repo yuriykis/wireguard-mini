@@ -209,3 +209,25 @@ func TestCalculateMAC1(t *testing.T) {
 		hex.EncodeToString(mac1[:]),
 	)
 }
+
+func TestSetInitiationMAC1(t *testing.T) {
+	message := HandshakeInitiation{
+		SenderIndex:          42,
+		UnencryptedEphemeral: [32]byte{1},
+		EncryptedStatic:      [48]byte{2},
+		EncryptedTimestamp:   [28]byte{3},
+	}
+	responderPublicKey := PublicKey{9}
+	dataBeforeMAC1 := message.MarshalBinary()[:mac1Offset]
+	expectedMAC1 := calculateMAC1(
+		deriveMAC1Key(responderPublicKey),
+		dataBeforeMAC1,
+	)
+	expectedMessage := message
+	expectedMessage.MAC1 = expectedMAC1
+
+	setInitiationMAC1(&message, responderPublicKey)
+
+	require.Equal(t, expectedMessage, message)
+	require.NotEqual(t, [16]byte{}, message.MAC1)
+}

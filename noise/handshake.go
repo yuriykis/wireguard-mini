@@ -190,6 +190,14 @@ func calculateMAC1(mac1Key [HashSize]byte, data []byte) [16]byte {
 	return result
 }
 
+// setInitiationMAC1 calculates MAC1 over all handshake initiation fields that
+// precede MAC1 and stores the result in the message. MAC2 is left unchanged.
+func setInitiationMAC1(message *HandshakeInitiation, responderPublicKey PublicKey) {
+	data := message.MarshalBinary()
+	mac1Key := deriveMAC1Key(responderPublicKey)
+	message.MAC1 = calculateMAC1(mac1Key, data[:mac1Offset])
+}
+
 func hmacBlake2s(key, input []byte) [HashSize]byte {
 	mac := hmac.New(newBlake2s256, key)
 	_, _ = mac.Write(input)
