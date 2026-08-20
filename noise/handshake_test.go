@@ -231,3 +231,12 @@ func TestSetInitiationMAC1(t *testing.T) {
 	require.Equal(t, expectedMessage, message)
 	require.NotEqual(t, [16]byte{}, message.MAC1)
 }
+
+func TestGenerateSenderIndexIsRandom(t *testing.T) {
+	first, err := generateSenderIndex()
+	require.NoError(t, err)
+	second, err := generateSenderIndex()
+	require.NoError(t, err)
+
+	require.NotEqual(t, first, second)
+}

@@ -2,6 +2,9 @@ package noise
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
+	"encoding/binary"
+	"fmt"
 	"hash"
 
 	"golang.org/x/crypto/blake2s"
@@ -213,4 +216,16 @@ func newBlake2s256() hash.Hash {
 		panic("create unkeyed BLAKE2s-256: " + err.Error())
 	}
 	return hasher
+}
+
+// generateSenderIndex draws the initiator's local session identifier. The
+// value travels in cleartext and has no cryptographic role, so it only has to
+// be unpredictable enough not to leak how many sessions this host has run.
+func generateSenderIndex() (uint32, error) {
+	var indexBytes [4]byte
+	if _, err := rand.Read(indexBytes[:]); err != nil {
+		return 0, fmt.Errorf("generate sender index: %w", err)
+	}
+
+	return binary.LittleEndian.Uint32(indexBytes[:]), nil
 }
