@@ -1,6 +1,7 @@
 package noise
 
 import (
+	"bytes"
 	"encoding/hex"
 	"testing"
 	"time"
@@ -42,4 +43,45 @@ func TestEncryptInitiationTimestamp(t *testing.T) {
 	expectedState.mixHash(message.EncryptedTimestamp[:])
 	require.Equal(t, expectedState.Hash, state.Hash)
 	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
+}
+
+func TestNewTAI64NTimestampIsOrderedByteWise(t *testing.T) {
+	// A responder rejects a replayed initiation by comparing the raw bytes of
+	// the received timestamp with the last one it accepted, so a later moment
+	// has to produce a lexicographically greater value.
+	tests := []struct {
+		name    string
+		earlier time.Time
+		later   time.Time
+	}{
+		{
+			name:    "later second",
+			earlier: time.Unix(1_700_000_000, 0),
+			later:   time.Unix(1_700_000_001, 0),
+		},
+		{
+			name:    "later nanosecond within the same second",
+			earlier: time.Unix(1_700_000_000, 0),
+			later:   time.Unix(1_700_000_000, 100_000_000),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			earlier := newTAI64NTimestamp(tt.earlier)
+			later := newTAI64NTimestamp(tt.later)
+
+			require.Negative(t, bytes.Compare(earlier[:], later[:]))
+		})
+	}
+}
+
+func TestNewTAI64NTimestampWhitensLowNanosecondBits(t *testing.T) {
+	// The lowest nanosecond bits are cleared on purpose: they would expose the
+	// precision of the local clock without adding anything to replay
+	// protection.
+	coarse := newTAI64NTimestamp(time.Unix(1_700_000_000, 100_000_000))
+	fine := newTAI64NTimestamp(time.Unix(1_700_000_000, 100_000_001))
+
+	require.Equal(t, coarse, fine)
 }
