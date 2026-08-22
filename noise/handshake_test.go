@@ -240,3 +240,17 @@ func TestGenerateSenderIndexIsRandom(t *testing.T) {
 
 	require.NotEqual(t, first, second)
 }
+
+func TestSetInitiationMAC2IsZeroWithoutCookie(t *testing.T) {
+	message := HandshakeInitiation{
+		SenderIndex: 42,
+		MAC1:        [16]byte{7},
+		MAC2:        [16]byte{1, 2, 3},
+	}
+	expectedMessage := message
+	expectedMessage.MAC2 = [16]byte{}
+
+	setInitiationMAC2(&message)
+
+	require.Equal(t, expectedMessage, message)
+}

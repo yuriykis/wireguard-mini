@@ -201,6 +201,17 @@ func setInitiationMAC1(message *HandshakeInitiation, responderPublicKey PublicKe
 	message.MAC1 = calculateMAC1(mac1Key, data[:mac1Offset])
 }
 
+// setInitiationMAC2 fills the second message authenticator. MAC2 exists only
+// for WireGuard's cookie-based DoS mitigation: an initiator that has not been
+// given a cookie sends an all-zero MAC2, and a responder that is not under
+// load accepts it. Cookies are out of scope for this implementation, so MAC2
+// is always zero here. Zeroing it explicitly keeps that a decision rather than
+// an omission, and guarantees the field is clean even when the caller reuses a
+// message value.
+func setInitiationMAC2(message *HandshakeInitiation) {
+	message.MAC2 = [16]byte{}
+}
+
 func hmacBlake2s(key, input []byte) [HashSize]byte {
 	mac := hmac.New(newBlake2s256, key)
 	_, _ = mac.Write(input)
