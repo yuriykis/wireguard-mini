@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash"
+	"time"
 
 	"golang.org/x/crypto/blake2s"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -41,6 +42,69 @@ func NewHandshakeState(responderPublicKey PublicKey) HandshakeState {
 	}
 	state.mixHash(responderPublicKey[:])
 	return state
+}
+
+// CreateInitiation builds a complete handshake initiation message for the
+// given peer. It returns the message together with the handshake state left
+// behind after the last mixing step, which the caller needs to process the
+// responder's reply.
+func CreateInitiation(
+	initiatorStaticPrivate PrivateKey,
+	responderStaticPublic PublicKey,
+) (HandshakeInitiation, HandshakeState, error) {
+	initiatorStaticPublic, err := initiatorStaticPrivate.PublicKey()
+	if err != nil {
+		return HandshakeInitiation{}, HandshakeState{}, err
+	}
+
+	state := NewHandshakeState(responderStaticPublic)
+	var message HandshakeInitiation
+
+	message.SenderIndex, err = generateSenderIndex()
+	if err != nil {
+		return HandshakeInitiation{}, HandshakeState{}, err
+	}
+
+	ephemeralPrivate, err := state.setInitiationEphemeral(&message)
+	if err != nil {
+		return HandshakeInitiation{}, HandshakeState{}, err
+	}
+
+	staticEncryptionKey, err := state.deriveInitiationStaticEncryptionKey(
+		ephemeralPrivate,
+		responderStaticPublic,
+	)
+	if err != nil {
+		return HandshakeInitiation{}, HandshakeState{}, err
+	}
+	if err := state.encryptInitiationStatic(
+		&message,
+		staticEncryptionKey,
+		initiatorStaticPublic,
+	); err != nil {
+		return HandshakeInitiation{}, HandshakeState{}, err
+	}
+
+	timestampEncryptionKey, err := state.deriveInitiationTimestampEncryptionKey(
+		initiatorStaticPrivate,
+		responderStaticPublic,
+	)
+	if err != nil {
+		return HandshakeInitiation{}, HandshakeState{}, err
+	}
+	if err := state.encryptInitiationTimestamp(
+		&message,
+		timestampEncryptionKey,
+		newTAI64NTimestamp(time.Now()),
+	); err != nil {
+		return HandshakeInitiation{}, HandshakeState{}, err
+	}
+
+	// The two authenticators cover the finished message and are not part of
+	// the Noise transcript, so they come last and do not touch the state.
+	setInitiationMAC1(&message, responderStaticPublic)
+	setInitiationMAC2(&message)
+	return message, state, nil
 }
 
 // setInitiationEphemeral generates the initiator's ephemeral key pair, puts

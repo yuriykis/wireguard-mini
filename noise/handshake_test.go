@@ -3,6 +3,7 @@ package noise
 import (
 	"encoding/hex"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/chacha20poly1305"
@@ -253,4 +254,103 @@ func TestSetInitiationMAC2IsZeroWithoutCookie(t *testing.T) {
 	setInitiationMAC2(&message)
 
 	require.Equal(t, expectedMessage, message)
+}
+
+func TestCreateInitiationFillsEveryField(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	require.NotEqual(t, [32]byte{}, message.UnencryptedEphemeral)
+	require.NotEqual(t, [48]byte{}, message.EncryptedStatic)
+	require.NotEqual(t, [28]byte{}, message.EncryptedTimestamp)
+	require.NotEqual(t, [16]byte{}, message.MAC1)
+	require.Equal(t, [16]byte{}, message.MAC2)
+
+	expectedMAC1 := message
+	setInitiationMAC1(&expectedMAC1, responderPublic)
+	require.Equal(t, expectedMAC1.MAC1, message.MAC1)
+
+	parsed, err := ParseHandshakeInitiation(message.MarshalBinary())
+	require.NoError(t, err)
+	require.Equal(t, message, parsed)
+}
+
+func TestCreateInitiationUsesFreshEphemeralEveryTime(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	first, firstState, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+	second, secondState, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	require.NotEqual(t, first.UnencryptedEphemeral, second.UnencryptedEphemeral)
+	require.NotEqual(t, first.EncryptedStatic, second.EncryptedStatic)
+	require.NotEqual(t, firstState.ChainingKey, secondState.ChainingKey)
+}
+
+// TestCreateInitiationIsReadableByTheResponder replays the responder's half of
+// the handshake by hand. It is the real proof that the initiation is correct:
+// the responder mixes the same values in the same order, and both AEAD tags
+// verify only if every step matches.
+func TestCreateInitiationIsReadableByTheResponder(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorPublic, err := initiatorPrivate.PublicKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	before := newTAI64NTimestamp(time.Now())
+	message, initiatorState, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+	after := newTAI64NTimestamp(time.Now())
+
+	state := NewHandshakeState(responderPublic)
+	state.mixHash(message.UnencryptedEphemeral[:])
+	state.mixKey(message.UnencryptedEphemeral[:])
+
+	ephemeralSecret, err := responderPrivate.SharedSecret(message.UnencryptedEphemeral)
+	require.NoError(t, err)
+	staticKey := state.mixKeyAndGetEncryptionKey(ephemeralSecret[:])
+	decryptedStatic := decryptForTest(t, staticKey, message.EncryptedStatic[:], state.Hash[:])
+	require.Equal(t, initiatorPublic[:], decryptedStatic)
+	state.mixHash(message.EncryptedStatic[:])
+
+	var decryptedStaticKey PublicKey
+	copy(decryptedStaticKey[:], decryptedStatic)
+	staticSecret, err := responderPrivate.SharedSecret(decryptedStaticKey)
+	require.NoError(t, err)
+	timestampKey := state.mixKeyAndGetEncryptionKey(staticSecret[:])
+	decryptedTimestamp := decryptForTest(t, timestampKey, message.EncryptedTimestamp[:], state.Hash[:])
+	state.mixHash(message.EncryptedTimestamp[:])
+
+	require.GreaterOrEqual(t, string(decryptedTimestamp), string(before[:]))
+	require.LessOrEqual(t, string(decryptedTimestamp), string(after[:]))
+	require.Equal(t, initiatorState, state)
+}
+
+func decryptForTest(t *testing.T, key [HashSize]byte, ciphertext, additionalData []byte) []byte {
+	t.Helper()
+
+	aead, err := chacha20poly1305.New(key[:])
+	require.NoError(t, err)
+
+	var nonce [chacha20poly1305.NonceSize]byte
+	plaintext, err := aead.Open(nil, nonce[:], ciphertext, additionalData)
+	require.NoError(t, err)
+	return plaintext
 }
