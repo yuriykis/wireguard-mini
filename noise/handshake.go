@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash"
 	"time"
@@ -57,6 +58,8 @@ func CreateInitiation(
 		return HandshakeInitiation{}, HandshakeState{}, err
 	}
 
+	// The transcript is rebuilt in the same order the initiator built it, so
+	// every AEAD tag below verifies only if both sides agree on every byte.
 	state := NewHandshakeState(responderStaticPublic)
 	var message HandshakeInitiation
 
@@ -127,6 +130,16 @@ func (state *HandshakeState) setInitiationEphemeral(message *HandshakeInitiation
 	return ephemeralPrivate, nil
 }
 
+// consumeInitiationEphemeral mixes the initiator's ephemeral public key into
+// the responder's handshake state. It is the mirror of setInitiationEphemeral
+// with the key generation removed: the responder does not create this value,
+// it reads it off the wire, but it must absorb it in exactly the same order to
+// end up with the same transcript.
+func (state *HandshakeState) consumeInitiationEphemeral(message HandshakeInitiation) {
+	state.mixHash(message.UnencryptedEphemeral[:])
+	state.mixKey(message.UnencryptedEphemeral[:])
+}
+
 // deriveInitiationStaticEncryptionKey performs ECDH between the initiator's
 // ephemeral private key and the responder's static public key. It mixes the
 // resulting shared secret into the handshake and returns the key that will
@@ -136,6 +149,27 @@ func (state *HandshakeState) deriveInitiationStaticEncryptionKey(
 	responderStaticPublic PublicKey,
 ) ([HashSize]byte, error) {
 	sharedSecret, err := ephemeralPrivate.SharedSecret(responderStaticPublic)
+	if err != nil {
+		return [HashSize]byte{}, err
+	}
+
+	return state.mixKeyAndGetEncryptionKey(sharedSecret[:]), nil
+}
+
+// consumeInitiationStaticDecryptionKey performs ECDH between the responder's
+// static private key and the initiator's ephemeral public key. Curve25519 is
+// symmetric, so this produces the same shared secret the initiator obtained
+// the other way round in deriveInitiationStaticEncryptionKey, and therefore
+// the same key for the static field. This is the only secret the responder can
+// compute before it knows who the initiator is.
+func (state *HandshakeState) consumeInitiationStaticDecryptionKey(
+	responderStaticPrivate PrivateKey,
+	message HandshakeInitiation,
+) ([HashSize]byte, error) {
+	var initiatorEphemeralPublic PublicKey
+	copy(initiatorEphemeralPublic[:], message.UnencryptedEphemeral[:])
+
+	sharedSecret, err := responderStaticPrivate.SharedSecret(initiatorEphemeralPublic)
 	if err != nil {
 		return [HashSize]byte{}, err
 	}
@@ -168,6 +202,38 @@ func (state *HandshakeState) encryptInitiationStatic(
 	return nil
 }
 
+// decryptInitiationStatic decrypts the initiator's static public key and
+// mixes the ciphertext into the hash, mirroring encryptInitiationStatic. The
+// handshake hash is the additional data, so the tag verifies only if the
+// responder rebuilt the same transcript. A failure here means the message was
+// tampered with, was addressed to somebody else, or was never valid, and the
+// caller answers it with silence.
+func (state *HandshakeState) decryptInitiationStatic(
+	message HandshakeInitiation,
+	decryptionKey [HashSize]byte,
+) (PublicKey, error) {
+	aead, err := chacha20poly1305.New(decryptionKey[:])
+	if err != nil {
+		return PublicKey{}, err
+	}
+
+	var nonce [chacha20poly1305.NonceSize]byte
+	plaintext, err := aead.Open(
+		nil,
+		nonce[:],
+		message.EncryptedStatic[:],
+		state.Hash[:],
+	)
+	if err != nil {
+		return PublicKey{}, fmt.Errorf("decrypt handshake initiation static key: %w", err)
+	}
+
+	var initiatorStaticPublic PublicKey
+	copy(initiatorStaticPublic[:], plaintext)
+	state.mixHash(message.EncryptedStatic[:])
+	return initiatorStaticPublic, nil
+}
+
 // deriveInitiationTimestampEncryptionKey performs ECDH between the
 // initiator's and responder's static keys. It mixes the resulting shared
 // secret into the handshake and returns the key that will encrypt the
@@ -177,6 +243,24 @@ func (state *HandshakeState) deriveInitiationTimestampEncryptionKey(
 	responderStaticPublic PublicKey,
 ) ([HashSize]byte, error) {
 	sharedSecret, err := initiatorStaticPrivate.SharedSecret(responderStaticPublic)
+	if err != nil {
+		return [HashSize]byte{}, err
+	}
+
+	return state.mixKeyAndGetEncryptionKey(sharedSecret[:]), nil
+}
+
+// consumeInitiationTimestampDecryptionKey performs ECDH between the
+// responder's static private key and the initiator's static public key learned
+// from the previous field. This is the step that authenticates the initiator:
+// only the holder of the matching static private key can produce a message
+// whose timestamp tag verifies. It is also the pair of keys that stays the
+// same across every handshake between these two peers.
+func (state *HandshakeState) consumeInitiationTimestampDecryptionKey(
+	responderStaticPrivate PrivateKey,
+	initiatorStaticPublic PublicKey,
+) ([HashSize]byte, error) {
+	sharedSecret, err := responderStaticPrivate.SharedSecret(initiatorStaticPublic)
 	if err != nil {
 		return [HashSize]byte{}, err
 	}
@@ -206,6 +290,36 @@ func (state *HandshakeState) encryptInitiationTimestamp(
 	copy(message.EncryptedTimestamp[:], encryptedTimestamp)
 	state.mixHash(message.EncryptedTimestamp[:])
 	return nil
+}
+
+// decryptInitiationTimestamp decrypts the TAI64N timestamp and mixes the
+// ciphertext into the hash, mirroring encryptInitiationTimestamp. This tag is
+// the one that proves the initiator holds the static private key matching the
+// identity it claimed, because the key comes from the static-static ECDH.
+func (state *HandshakeState) decryptInitiationTimestamp(
+	message HandshakeInitiation,
+	decryptionKey [HashSize]byte,
+) (tai64nTimestamp, error) {
+	aead, err := chacha20poly1305.New(decryptionKey[:])
+	if err != nil {
+		return tai64nTimestamp{}, err
+	}
+
+	var nonce [chacha20poly1305.NonceSize]byte
+	plaintext, err := aead.Open(
+		nil,
+		nonce[:],
+		message.EncryptedTimestamp[:],
+		state.Hash[:],
+	)
+	if err != nil {
+		return tai64nTimestamp{}, fmt.Errorf("decrypt handshake initiation timestamp: %w", err)
+	}
+
+	var timestamp tai64nTimestamp
+	copy(timestamp[:], plaintext)
+	state.mixHash(message.EncryptedTimestamp[:])
+	return timestamp, nil
 }
 
 // mixHash appends data to the transcript by hashing the current handshake hash
@@ -265,6 +379,20 @@ func setInitiationMAC1(message *HandshakeInitiation, responderPublicKey PublicKe
 	message.MAC1 = calculateMAC1(mac1Key, data[:mac1Offset])
 }
 
+// verifyInitiationMAC1 recomputes MAC1 over the raw bytes that precede it and
+// compares it with the value carried by the message. The comparison is
+// constant time, because a MAC compared byte by byte can be guessed one byte
+// at a time by timing the answers.
+func verifyInitiationMAC1(data []byte, responderPublicKey PublicKey) error {
+	mac1Key := deriveMAC1Key(responderPublicKey)
+	expected := calculateMAC1(mac1Key, data[:mac1Offset])
+
+	if !hmac.Equal(expected[:], data[mac1Offset:mac2Offset]) {
+		return errors.New("handshake initiation MAC1 mismatch")
+	}
+	return nil
+}
+
 // setInitiationMAC2 fills the second message authenticator. MAC2 exists only
 // for WireGuard's cookie-based DoS mitigation: an initiator that has not been
 // given a cookie sends an all-zero MAC2, and a responder that is not under
@@ -303,4 +431,63 @@ func generateSenderIndex() (uint32, error) {
 	}
 
 	return binary.LittleEndian.Uint32(indexBytes[:]), nil
+}
+
+// ConsumeInitiation processes a handshake initiation received from the wire.
+// It is the responder's mirror image of CreateInitiation: it replays the same
+// mixing steps in the same order, and every AEAD tag verifies only if both
+// sides arrived at an identical transcript.
+//
+// It returns the initiator's static public key, which is how the responder
+// learns who is talking to it, the timestamp the initiator claimed, and the
+// handshake state left behind, which is needed to build the response.
+func ConsumeInitiation(
+	responderStaticPrivate PrivateKey,
+	data []byte,
+) (HandshakeInitiation, PublicKey, tai64nTimestamp, HandshakeState, error) {
+	message, err := ParseHandshakeInitiation(data)
+	if err != nil {
+		return HandshakeInitiation{}, PublicKey{}, tai64nTimestamp{}, HandshakeState{}, err
+	}
+
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	if err != nil {
+		return HandshakeInitiation{}, PublicKey{}, tai64nTimestamp{}, HandshakeState{}, err
+	}
+	if err := verifyInitiationMAC1(data, responderStaticPublic); err != nil {
+		return HandshakeInitiation{}, PublicKey{}, tai64nTimestamp{}, HandshakeState{}, err
+	}
+
+	// The transcript is rebuilt in the same order the initiator built it, so
+	// every AEAD tag below verifies only if both sides agree on every byte.
+	state := NewHandshakeState(responderStaticPublic)
+	state.consumeInitiationEphemeral(message)
+
+	staticDecryptionKey, err := state.consumeInitiationStaticDecryptionKey(responderStaticPrivate, message)
+	if err != nil {
+		return HandshakeInitiation{}, PublicKey{}, tai64nTimestamp{}, HandshakeState{}, err
+	}
+
+	initiatorStaticPublic, err := state.decryptInitiationStatic(message, staticDecryptionKey)
+	if err != nil {
+		return HandshakeInitiation{}, PublicKey{}, tai64nTimestamp{}, HandshakeState{}, err
+	}
+
+	timestampDecryptionKey, err := state.consumeInitiationTimestampDecryptionKey(
+		responderStaticPrivate,
+		initiatorStaticPublic,
+	)
+	if err != nil {
+		return HandshakeInitiation{}, PublicKey{}, tai64nTimestamp{}, HandshakeState{}, err
+	}
+
+	// The timestamp is returned rather than checked. Rejecting one that is not
+	// newer than the last seen from this peer needs a peer table, which does
+	// not exist yet, and that check is the protocol's replay defence.
+	timestamp, err := state.decryptInitiationTimestamp(message, timestampDecryptionKey)
+	if err != nil {
+		return HandshakeInitiation{}, PublicKey{}, tai64nTimestamp{}, HandshakeState{}, err
+	}
+
+	return message, initiatorStaticPublic, timestamp, state, nil
 }

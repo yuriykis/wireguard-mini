@@ -354,3 +354,308 @@ func decryptForTest(t *testing.T, key [HashSize]byte, ciphertext, additionalData
 	require.NoError(t, err)
 	return plaintext
 }
+
+func TestConsumeInitiationRejectsMalformedMessage(t *testing.T) {
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+
+	valid := testHandshakeInitiation().MarshalBinary()
+
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr string
+	}{
+		{name: "too short", data: valid[:HandshakeInitiationSize-1], wantErr: "invalid handshake initiation length"},
+		{name: "wrong type", data: withByte(valid, 0, 2), wantErr: "invalid handshake initiation type"},
+		{name: "non-zero reserved byte", data: withByte(valid, 2, 1), wantErr: "reserved bytes must be zero"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, _, _, err := ConsumeInitiation(responderPrivate, tt.data)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestConsumeInitiationParsesEveryField(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	want, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	got, _, _, _, err := ConsumeInitiation(responderPrivate, want.MarshalBinary())
+
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestConsumeInitiationRejectsWrongMAC1(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	t.Run("tampered mac1", func(t *testing.T) {
+		data := message.MarshalBinary()
+		data[mac1Offset] ^= 0x01
+
+		_, _, _, _, err := ConsumeInitiation(responderPrivate, data)
+
+		require.ErrorContains(t, err, "MAC1 mismatch")
+	})
+
+	t.Run("tampered payload", func(t *testing.T) {
+		data := message.MarshalBinary()
+		data[ephemeralOffset] ^= 0x01
+
+		_, _, _, _, err := ConsumeInitiation(responderPrivate, data)
+
+		require.ErrorContains(t, err, "MAC1 mismatch")
+	})
+
+	t.Run("addressed to another responder", func(t *testing.T) {
+		otherPrivate, err := GeneratePrivateKey()
+		require.NoError(t, err)
+
+		_, _, _, _, err = ConsumeInitiation(otherPrivate, message.MarshalBinary())
+
+		require.ErrorContains(t, err, "MAC1 mismatch")
+	})
+}
+
+func TestConsumeInitiationRebuildsTheTranscript(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorPublic, err := initiatorPrivate.PublicKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	// Rebuild the responder's transcript step by step from the wire values and
+	// the responder's own private key, without calling the code under test.
+	var initiatorEphemeralPublic PublicKey
+	copy(initiatorEphemeralPublic[:], message.UnencryptedEphemeral[:])
+	ephemeralSharedSecret, err := responderPrivate.SharedSecret(initiatorEphemeralPublic)
+	require.NoError(t, err)
+	staticSharedSecret, err := responderPrivate.SharedSecret(initiatorPublic)
+	require.NoError(t, err)
+
+	want := NewHandshakeState(responderPublic)
+	want.mixHash(message.UnencryptedEphemeral[:])
+	want.mixKey(message.UnencryptedEphemeral[:])
+	want.mixKeyAndGetEncryptionKey(ephemeralSharedSecret[:])
+	want.mixHash(message.EncryptedStatic[:])
+	want.mixKeyAndGetEncryptionKey(staticSharedSecret[:])
+	want.mixHash(message.EncryptedTimestamp[:])
+
+	_, _, _, got, err := ConsumeInitiation(responderPrivate, message.MarshalBinary())
+
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestConsumeInitiationStaticKeyMatchesTheInitiators(t *testing.T) {
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	// Both sides start from the same transcript and reach the same point by
+	// running Curve25519 with the halves of the key pairs they each hold.
+	initiatorState := NewHandshakeState(responderPublic)
+	var message HandshakeInitiation
+	ephemeralPrivate, err := initiatorState.setInitiationEphemeral(&message)
+	require.NoError(t, err)
+
+	responderState := NewHandshakeState(responderPublic)
+	responderState.consumeInitiationEphemeral(message)
+
+	initiatorKey, err := initiatorState.deriveInitiationStaticEncryptionKey(
+		ephemeralPrivate,
+		responderPublic,
+	)
+	require.NoError(t, err)
+
+	responderKey, err := responderState.consumeInitiationStaticDecryptionKey(
+		responderPrivate,
+		message,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, initiatorKey, responderKey)
+	require.Equal(t, initiatorState, responderState)
+}
+
+func TestConsumeInitiationLearnsTheInitiatorsIdentity(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorPublic, err := initiatorPrivate.PublicKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	_, got, _, _, err := ConsumeInitiation(responderPrivate, message.MarshalBinary())
+
+	require.NoError(t, err)
+	require.Equal(t, initiatorPublic, got)
+}
+
+func TestConsumeInitiationRejectsTamperedStaticField(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	// MAC1 covers the static field, so it has to be recomputed after the edit.
+	// Otherwise the message would be rejected earlier and the AEAD tag would
+	// never be reached.
+	message.EncryptedStatic[0] ^= 0x01
+	setInitiationMAC1(&message, responderPublic)
+
+	_, _, _, _, err = ConsumeInitiation(responderPrivate, message.MarshalBinary())
+
+	require.ErrorContains(t, err, "decrypt handshake initiation static key")
+}
+
+func TestConsumeInitiationTimestampKeyMatchesTheInitiators(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorPublic, err := initiatorPrivate.PublicKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	// The transcript up to this point does not matter for the comparison, only
+	// that both sides share it, so an empty state is enough.
+	initiatorState := NewHandshakeState(responderPublic)
+	responderState := NewHandshakeState(responderPublic)
+
+	initiatorKey, err := initiatorState.deriveInitiationTimestampEncryptionKey(
+		initiatorPrivate,
+		responderPublic,
+	)
+	require.NoError(t, err)
+
+	responderKey, err := responderState.consumeInitiationTimestampDecryptionKey(
+		responderPrivate,
+		initiatorPublic,
+	)
+	require.NoError(t, err)
+
+	require.Equal(t, initiatorKey, responderKey)
+	require.Equal(t, initiatorState, responderState)
+}
+
+func TestConsumeInitiationRejectsTamperedTimestampField(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	message.EncryptedTimestamp[0] ^= 0x01
+	setInitiationMAC1(&message, responderPublic)
+
+	_, _, _, _, err = ConsumeInitiation(responderPrivate, message.MarshalBinary())
+
+	require.ErrorContains(t, err, "decrypt handshake initiation timestamp")
+}
+
+func TestConsumeInitiationRejectsAnotherInitiator(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	// An attacker who knows the responder's public key can reach the static
+	// field, but claiming somebody else's identity fails at the timestamp tag,
+	// because that key comes from the static-static ECDH.
+	impostorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	impostorPublic, err := impostorPrivate.PublicKey()
+	require.NoError(t, err)
+
+	state := NewHandshakeState(responderPublic)
+	state.consumeInitiationEphemeral(message)
+	staticKey, err := state.consumeInitiationStaticDecryptionKey(responderPrivate, message)
+	require.NoError(t, err)
+
+	aead, err := chacha20poly1305.New(staticKey[:])
+	require.NoError(t, err)
+	var nonce [chacha20poly1305.NonceSize]byte
+	copy(message.EncryptedStatic[:], aead.Seal(nil, nonce[:], impostorPublic[:], state.Hash[:]))
+	setInitiationMAC1(&message, responderPublic)
+
+	_, _, _, _, err = ConsumeInitiation(responderPrivate, message.MarshalBinary())
+
+	require.ErrorContains(t, err, "decrypt handshake initiation timestamp")
+}
+
+func TestCreateInitiationAndConsumeInitiationAgree(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorPublic, err := initiatorPrivate.PublicKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	before := newTAI64NTimestamp(time.Now())
+	message, initiatorState, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+	after := newTAI64NTimestamp(time.Now())
+
+	gotMessage, gotStatic, gotTimestamp, responderState, err := ConsumeInitiation(
+		responderPrivate,
+		message.MarshalBinary(),
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, message, gotMessage)
+	require.Equal(t, initiatorPublic, gotStatic)
+	require.GreaterOrEqual(t, string(gotTimestamp[:]), string(before[:]))
+	require.LessOrEqual(t, string(gotTimestamp[:]), string(after[:]))
+
+	// Both sides end the first message with an identical transcript. This is
+	// what the handshake response will be built on.
+	require.Equal(t, initiatorState, responderState)
+}
