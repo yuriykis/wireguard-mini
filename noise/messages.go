@@ -8,8 +8,10 @@ import (
 
 const (
 	HandshakeInitiationSize = 148
+	HandshakeResponseSize   = 92
 
 	handshakeInitiationType byte = 1
+	handshakeResponseType   byte = 2
 
 	senderIndexOffset        = 4
 	ephemeralOffset          = 8
@@ -17,6 +19,13 @@ const (
 	encryptedTimestampOffset = 88
 	mac1Offset               = 116
 	mac2Offset               = 132
+
+	responseSenderIndexOffset      = 4
+	responseReceiverIndexOffset    = 8
+	responseEphemeralOffset        = 12
+	responseEncryptedNothingOffset = 44
+	responseMAC1Offset             = 60
+	responseMAC2Offset             = 76
 )
 
 // HandshakeInitiation contains the fields carried by WireGuard's first
@@ -29,6 +38,43 @@ type HandshakeInitiation struct {
 	EncryptedTimestamp   [28]byte
 	MAC1                 [16]byte
 	MAC2                 [16]byte
+}
+
+// HandshakeResponse contains the fields carried by WireGuard's second
+// handshake message. EncryptedNothing holds only the 16-byte AEAD tag produced
+// by encrypting an empty plaintext. The message type and the three reserved
+// zero bytes are part of the wire format, so callers do not have to set them.
+type HandshakeResponse struct {
+	SenderIndex          uint32
+	ReceiverIndex        uint32
+	UnencryptedEphemeral [32]byte
+	EncryptedNothing     [16]byte
+	MAC1                 [16]byte
+	MAC2                 [16]byte
+}
+
+// MarshalBinary encodes a handshake response in WireGuard's 92-byte wire
+// format.
+func (m HandshakeResponse) MarshalBinary() []byte {
+	// 1. Allocate exactly one response-sized buffer; its zero value supplies
+	//    the three reserved bytes required by the protocol.
+	// 2. Write message type 2.
+	// 3. Write the sender and receiver indices in little-endian order.
+	// 4. Copy the ephemeral key and encrypted-empty AEAD tag.
+	// 5. Copy MAC1 and MAC2 last, because they authenticate the preceding
+	//    portions of the serialized message.
+	panic("HandshakeResponse.MarshalBinary is not implemented")
+}
+
+// ParseHandshakeResponse decodes a WireGuard handshake response.
+func ParseHandshakeResponse(data []byte) (HandshakeResponse, error) {
+	// 1. Reject every length other than the exact 92-byte wire size.
+	// 2. Reject a message type other than 2.
+	// 3. Reject any non-zero reserved byte.
+	// 4. Read both indices in little-endian order.
+	// 5. Copy the ephemeral key, encrypted-empty AEAD tag, MAC1, and MAC2 into
+	//    their fixed-size fields.
+	panic("ParseHandshakeResponse is not implemented")
 }
 
 // MarshalBinary encodes a handshake initiation in WireGuard's 148-byte wire
