@@ -22,6 +22,37 @@ func TestHandshakeResponseMarshalBinary(t *testing.T) {
 	require.Equal(t, message.MAC2[:], data[76:92])
 }
 
+func TestHandshakeResponseRoundTrip(t *testing.T) {
+	want := testHandshakeResponse()
+
+	got, err := ParseHandshakeResponse(want.MarshalBinary())
+
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestParseHandshakeResponseRejectsInvalidMessage(t *testing.T) {
+	valid := testHandshakeResponse().MarshalBinary()
+
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr string
+	}{
+		{name: "too short", data: valid[:HandshakeResponseSize-1], wantErr: "invalid handshake response length"},
+		{name: "too long", data: append(append([]byte(nil), valid...), 0), wantErr: "invalid handshake response length"},
+		{name: "wrong type", data: withByte(valid, 0, 1), wantErr: "invalid handshake response type"},
+		{name: "non-zero reserved byte", data: withByte(valid, 2, 1), wantErr: "reserved bytes must be zero"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseHandshakeResponse(tt.data)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 func TestHandshakeInitiationMarshalBinary(t *testing.T) {
 	message := testHandshakeInitiation()
 

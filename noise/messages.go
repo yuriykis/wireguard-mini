@@ -69,13 +69,25 @@ func (m HandshakeResponse) MarshalBinary() []byte {
 
 // ParseHandshakeResponse decodes a WireGuard handshake response.
 func ParseHandshakeResponse(data []byte) (HandshakeResponse, error) {
-	// 1. Reject every length other than the exact 92-byte wire size.
-	// 2. Reject a message type other than 2.
-	// 3. Reject any non-zero reserved byte.
-	// 4. Read both indices in little-endian order.
-	// 5. Copy the ephemeral key, encrypted-empty AEAD tag, MAC1, and MAC2 into
-	//    their fixed-size fields.
-	panic("ParseHandshakeResponse is not implemented")
+	var message HandshakeResponse
+
+	if len(data) != HandshakeResponseSize {
+		return message, fmt.Errorf("invalid handshake response length: got %d, want %d", len(data), HandshakeResponseSize)
+	}
+	if data[0] != handshakeResponseType {
+		return message, fmt.Errorf("invalid handshake response type: got %d, want %d", data[0], handshakeResponseType)
+	}
+	if data[1] != 0 || data[2] != 0 || data[3] != 0 {
+		return message, errors.New("handshake response reserved bytes must be zero")
+	}
+
+	message.SenderIndex = binary.LittleEndian.Uint32(data[responseSenderIndexOffset:responseReceiverIndexOffset])
+	message.ReceiverIndex = binary.LittleEndian.Uint32(data[responseReceiverIndexOffset:responseEphemeralOffset])
+	copy(message.UnencryptedEphemeral[:], data[responseEphemeralOffset:responseEncryptedNothingOffset])
+	copy(message.EncryptedNothing[:], data[responseEncryptedNothingOffset:responseMAC1Offset])
+	copy(message.MAC1[:], data[responseMAC1Offset:responseMAC2Offset])
+	copy(message.MAC2[:], data[responseMAC2Offset:])
+	return message, nil
 }
 
 // MarshalBinary encodes a handshake initiation in WireGuard's 148-byte wire
