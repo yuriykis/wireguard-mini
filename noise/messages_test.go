@@ -6,6 +6,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestHandshakeResponseMarshalBinary(t *testing.T) {
+	message := testHandshakeResponse()
+
+	data := message.MarshalBinary()
+
+	require.Len(t, data, HandshakeResponseSize)
+	require.Equal(t, byte(2), data[0])
+	require.Equal(t, []byte{0, 0, 0}, data[1:4])
+	require.Equal(t, []byte{0x04, 0x03, 0x02, 0x01}, data[4:8])
+	require.Equal(t, []byte{0x08, 0x07, 0x06, 0x05}, data[8:12])
+	require.Equal(t, message.UnencryptedEphemeral[:], data[12:44])
+	require.Equal(t, message.EncryptedNothing[:], data[44:60])
+	require.Equal(t, message.MAC1[:], data[60:76])
+	require.Equal(t, message.MAC2[:], data[76:92])
+}
+
 func TestHandshakeInitiationMarshalBinary(t *testing.T) {
 	message := testHandshakeInitiation()
 
@@ -61,6 +77,17 @@ func testHandshakeInitiation() HandshakeInitiation {
 	fill(message.EncryptedTimestamp[:], 0x70)
 	fill(message.MAC1[:], 0x90)
 	fill(message.MAC2[:], 0xa0)
+	return message
+}
+
+func testHandshakeResponse() HandshakeResponse {
+	var message HandshakeResponse
+	message.SenderIndex = 0x01020304
+	message.ReceiverIndex = 0x05060708
+	fill(message.UnencryptedEphemeral[:], 0x10)
+	fill(message.EncryptedNothing[:], 0x40)
+	fill(message.MAC1[:], 0x60)
+	fill(message.MAC2[:], 0x70)
 	return message
 }
 

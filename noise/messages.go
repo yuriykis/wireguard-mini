@@ -56,14 +56,15 @@ type HandshakeResponse struct {
 // MarshalBinary encodes a handshake response in WireGuard's 92-byte wire
 // format.
 func (m HandshakeResponse) MarshalBinary() []byte {
-	// 1. Allocate exactly one response-sized buffer; its zero value supplies
-	//    the three reserved bytes required by the protocol.
-	// 2. Write message type 2.
-	// 3. Write the sender and receiver indices in little-endian order.
-	// 4. Copy the ephemeral key and encrypted-empty AEAD tag.
-	// 5. Copy MAC1 and MAC2 last, because they authenticate the preceding
-	//    portions of the serialized message.
-	panic("HandshakeResponse.MarshalBinary is not implemented")
+	data := make([]byte, HandshakeResponseSize)
+	data[0] = handshakeResponseType
+	binary.LittleEndian.PutUint32(data[responseSenderIndexOffset:responseReceiverIndexOffset], m.SenderIndex)
+	binary.LittleEndian.PutUint32(data[responseReceiverIndexOffset:responseEphemeralOffset], m.ReceiverIndex)
+	copy(data[responseEphemeralOffset:responseEncryptedNothingOffset], m.UnencryptedEphemeral[:])
+	copy(data[responseEncryptedNothingOffset:responseMAC1Offset], m.EncryptedNothing[:])
+	copy(data[responseMAC1Offset:responseMAC2Offset], m.MAC1[:])
+	copy(data[responseMAC2Offset:], m.MAC2[:])
+	return data
 }
 
 // ParseHandshakeResponse decodes a WireGuard handshake response.
