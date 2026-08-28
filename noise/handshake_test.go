@@ -435,6 +435,40 @@ func TestConsumeInitiationRejectsWrongMAC1(t *testing.T) {
 	})
 }
 
+func TestConsumeInitiationAcceptsNonZeroMAC2(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderPublic, err := responderPrivate.PublicKey()
+	require.NoError(t, err)
+
+	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	require.NoError(t, err)
+
+	// A peer that already holds a cookie, such as the kernel implementation
+	// under load, fills MAC2 with a real value. MAC1 covers only the bytes
+	// before it and MAC2 itself is not verified here, so such a message must
+	// still be accepted and must yield exactly the same result.
+	withoutCookie := message.MarshalBinary()
+	withCookie := message.MarshalBinary()
+	for i := range withCookie[mac2Offset:] {
+		withCookie[mac2Offset+i] = byte(i + 1)
+	}
+
+	wantMessage, wantStatic, wantTimestamp, wantState, err := ConsumeInitiation(responderPrivate, withoutCookie)
+	require.NoError(t, err)
+
+	gotMessage, gotStatic, gotTimestamp, gotState, err := ConsumeInitiation(responderPrivate, withCookie)
+
+	require.NoError(t, err)
+	require.Equal(t, withCookie[mac2Offset:], gotMessage.MAC2[:])
+	require.Equal(t, wantMessage.MAC1, gotMessage.MAC1)
+	require.Equal(t, wantStatic, gotStatic)
+	require.Equal(t, wantTimestamp, gotTimestamp)
+	require.Equal(t, wantState, gotState)
+}
+
 func TestConsumeInitiationRebuildsTheTranscript(t *testing.T) {
 	initiatorPrivate, err := GeneratePrivateKey()
 	require.NoError(t, err)
