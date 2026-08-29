@@ -491,3 +491,54 @@ func ConsumeInitiation(
 
 	return message, initiatorStaticPublic, timestamp, state, nil
 }
+
+// CreateResponse builds the handshake response, WireGuard's second message.
+// It is the responder's answer to an initiation that ConsumeInitiation has
+// already accepted, so it starts from the state that call left behind and
+// continues the very same transcript.
+//
+// The message carries no identity and no payload. Its whole job is to hand the
+// initiator a fresh ephemeral public key and one AEAD tag over an empty
+// plaintext. That tag verifies only if the initiator reaches a byte-identical
+// transcript, which proves the responder holds the right static key and
+// completed the same two Diffie-Hellman exchanges.
+//
+// It returns the message together with the handshake state left behind, from
+// which both sides will later derive the transport keys.
+func CreateResponse(
+	initiatorStaticPublic PublicKey,
+	initiation HandshakeInitiation,
+	state HandshakeState,
+) (HandshakeResponse, HandshakeState, error) {
+	// 1. Draw this side's local session identifier and echo the initiator's
+	//    one back, so each side can route later packets to the right session.
+	//    Neither value is secret and neither enters the transcript.
+
+	// 2. Generate the responder's ephemeral key pair, put the public half in
+	//    the message, and absorb it into both the hash and the chaining key,
+	//    in the same order setInitiationEphemeral uses.
+
+	// 3. Mix in DH(responder ephemeral, initiator ephemeral). This is the
+	//    first exchange that binds the two fresh key pairs together and is
+	//    what gives the session forward secrecy.
+
+	// 4. Mix in DH(responder ephemeral, initiator static). This ties the fresh
+	//    session to the identity the responder learned from the initiation, so
+	//    only the holder of that static key can finish the handshake.
+
+	// 5. Mix in the preshared key with a three-output KDF: the new chaining
+	//    key, a value that goes into the hash, and the key that encrypts the
+	//    empty payload. No preshared key is configured here, so an all-zero
+	//    value is used, which is what WireGuard does when the option is unset.
+
+	// 6. Encrypt an empty plaintext with that key, using the current hash as
+	//    additional data, and store the resulting 16-byte tag in the message.
+	//    Then absorb the tag into the hash, closing the transcript.
+
+	// 7. Fill MAC1 over the finished message. Unlike the initiation, this MAC
+	//    is keyed on the initiator's static public key, because it authorizes
+	//    the message towards the initiator. MAC2 stays zero: cookies are out
+	//    of scope.
+
+	return HandshakeResponse{}, state, errors.New("CreateResponse is not implemented yet")
+}
