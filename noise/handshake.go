@@ -323,6 +323,35 @@ func (state *HandshakeState) decryptInitiationTimestamp(
 	return timestamp, nil
 }
 
+// encryptResponseNothing encrypts an empty plaintext and stores the resulting
+// 16-byte tag in the message, then absorbs that tag into the transcript hash.
+//
+// There is nothing to hide in the second message, so the payload is empty and
+// the ciphertext is the authentication tag alone. The tag is computed over the
+// handshake hash as additional data, which by now covers every value both
+// sides have exchanged and every secret they derived from them. Verifying it
+// therefore proves the sender rebuilt a byte-identical transcript, which only
+// the holder of the responder's static private key could do. This one tag is
+// the whole cryptographic content of the response.
+//
+// WireGuard uses counter zero here, which produces an all-zero
+// ChaCha20-Poly1305 nonce, exactly as in the initiation.
+func (state *HandshakeState) encryptResponseNothing(
+	message *HandshakeResponse,
+	encryptionKey [HashSize]byte,
+) error {
+	aead, err := chacha20poly1305.New(encryptionKey[:])
+	if err != nil {
+		return err
+	}
+
+	var nonce [chacha20poly1305.NonceSize]byte
+	encryptedNothing := aead.Seal(nil, nonce[:], nil, state.Hash[:])
+	copy(message.EncryptedNothing[:], encryptedNothing)
+	state.mixHash(message.EncryptedNothing[:])
+	return nil
+}
+
 // mixHash appends data to the transcript by hashing the current handshake hash
 // together with the new bytes.
 func (state *HandshakeState) mixHash(data []byte) {
@@ -569,14 +598,13 @@ func CreateResponse(
 
 	// An all-zero preshared key is what WireGuard uses when the optional
 	// symmetric key is not configured, and it is what this implementation
-	// always uses. The key returned here encrypts the empty payload in the
-	// next step, which is not implemented yet.
+	// always uses.
 	var presharedKey [PresharedKeySize]byte
-	_ = state.mixKeyHashAndGetEncryptionKey(presharedKey[:])
+	encryptionKey := state.mixKeyHashAndGetEncryptionKey(presharedKey[:])
 
-	// 6. Encrypt an empty plaintext with that key, using the current hash as
-	//    additional data, and store the resulting 16-byte tag in the message.
-	//    Then absorb the tag into the hash, closing the transcript.
+	if err := state.encryptResponseNothing(&message, encryptionKey); err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
 
 	// 7. Fill MAC1 over the finished message. Unlike the initiation, this MAC
 	//    is keyed on the initiator's static public key, because it authorizes

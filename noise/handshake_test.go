@@ -835,3 +835,47 @@ func TestMixKeyHashAndGetEncryptionKey(t *testing.T) {
 	require.NotEqual(t, expectedChainingKey, expectedEncryptionKey)
 	require.NotEqual(t, expectedHashMixin, expectedEncryptionKey)
 }
+
+func TestEncryptResponseNothing(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	var presharedKey [PresharedKeySize]byte
+	encryptionKey := state.mixKeyHashAndGetEncryptionKey(presharedKey[:])
+	hashBefore := state.Hash
+	chainingKeyBefore := state.ChainingKey
+	message := HandshakeResponse{}
+
+	err := state.encryptResponseNothing(&message, encryptionKey)
+
+	require.NoError(t, err)
+	// The other side opens the tag with the same key and the hash as it stood
+	// before this step, and gets an empty plaintext back.
+	aead, err := chacha20poly1305.New(encryptionKey[:])
+	require.NoError(t, err)
+	var nonce [chacha20poly1305.NonceSize]byte
+	plaintext, err := aead.Open(nil, nonce[:], message.EncryptedNothing[:], hashBefore[:])
+	require.NoError(t, err)
+	require.Empty(t, plaintext)
+
+	expectedState := HandshakeState{Hash: hashBefore}
+	expectedState.mixHash(message.EncryptedNothing[:])
+	require.Equal(t, expectedState.Hash, state.Hash)
+	// Encrypting does not feed the chaining key; only the hash moves on.
+	require.Equal(t, chainingKeyBefore, state.ChainingKey)
+}
+
+func TestEncryptResponseNothingRejectsADifferentTranscript(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	var presharedKey [PresharedKeySize]byte
+	encryptionKey := state.mixKeyHashAndGetEncryptionKey(presharedKey[:])
+	message := HandshakeResponse{}
+	require.NoError(t, state.encryptResponseNothing(&message, encryptionKey))
+
+	// A receiver whose transcript differs by a single byte cannot open the
+	// tag, which is exactly how the response authenticates the responder.
+	aead, err := chacha20poly1305.New(encryptionKey[:])
+	require.NoError(t, err)
+	var nonce [chacha20poly1305.NonceSize]byte
+	wrongHash := NewHandshakeState(PublicKey{10}).Hash
+	_, err = aead.Open(nil, nonce[:], message.EncryptedNothing[:], wrongHash[:])
+	require.Error(t, err)
+}
