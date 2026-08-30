@@ -693,3 +693,24 @@ func TestCreateInitiationAndConsumeInitiationAgree(t *testing.T) {
 	// what the handshake response will be built on.
 	require.Equal(t, initiatorState, responderState)
 }
+
+func TestSetResponseEphemeral(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	expectedState := state
+	message := HandshakeResponse{SenderIndex: 42, ReceiverIndex: 7}
+
+	ephemeralPrivate, err := state.setResponseEphemeral(&message)
+
+	require.NoError(t, err)
+	ephemeralPublic, err := ephemeralPrivate.PublicKey()
+	require.NoError(t, err)
+	require.Equal(t, ephemeralPublic[:], message.UnencryptedEphemeral[:])
+
+	expectedState.mixHash(message.UnencryptedEphemeral[:])
+	expectedState.mixKey(message.UnencryptedEphemeral[:])
+	require.Equal(t, expectedState.Hash, state.Hash)
+	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
+	require.Equal(t, uint32(42), message.SenderIndex)
+	require.Equal(t, uint32(7), message.ReceiverIndex)
+	require.Equal(t, [16]byte{}, message.EncryptedNothing)
+}

@@ -510,13 +510,19 @@ func CreateResponse(
 	initiation HandshakeInitiation,
 	state HandshakeState,
 ) (HandshakeResponse, HandshakeState, error) {
-	// 1. Draw this side's local session identifier and echo the initiator's
-	//    one back, so each side can route later packets to the right session.
-	//    Neither value is secret and neither enters the transcript.
+	var message HandshakeResponse
 
-	// 2. Generate the responder's ephemeral key pair, put the public half in
-	//    the message, and absorb it into both the hash and the chaining key,
-	//    in the same order setInitiationEphemeral uses.
+	senderIndex, err := generateSenderIndex()
+	if err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
+	message.SenderIndex = senderIndex
+	message.ReceiverIndex = initiation.SenderIndex
+
+	_, err = state.setResponseEphemeral(&message)
+	if err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
 
 	// 3. Mix in DH(responder ephemeral, initiator ephemeral). This is the
 	//    first exchange that binds the two fresh key pairs together and is
@@ -541,4 +547,27 @@ func CreateResponse(
 	//    of scope.
 
 	return HandshakeResponse{}, state, errors.New("CreateResponse is not implemented yet")
+}
+
+// setResponseEphemeral generates the responder's ephemeral key pair, puts the
+// public key in the message, and mixes that public value into the handshake
+// state. It is the exact counterpart of setInitiationEphemeral: the same two
+// mixing steps in the same order, because the initiator will replay them from
+// the value it reads off the wire and both sides have to reach an identical
+// transcript. The private key is returned for the two ECDH steps that follow.
+func (state *HandshakeState) setResponseEphemeral(message *HandshakeResponse) (PrivateKey, error) {
+	ephemeralPrivate, err := GeneratePrivateKey()
+	if err != nil {
+		return PrivateKey{}, err
+	}
+
+	ephemeralPublic, err := ephemeralPrivate.PublicKey()
+	if err != nil {
+		return PrivateKey{}, err
+	}
+
+	copy(message.UnencryptedEphemeral[:], ephemeralPublic[:])
+	state.mixHash(message.UnencryptedEphemeral[:])
+	state.mixKey(message.UnencryptedEphemeral[:])
+	return ephemeralPrivate, nil
 }
