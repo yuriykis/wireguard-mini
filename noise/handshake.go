@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	HashSize        = 32
-	ChainingKeySize = 32
+	HashSize         = 32
+	ChainingKeySize  = 32
+	PresharedKeySize = 32
 
 	noiseConstruction   = "Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s"
 	wireGuardIdentifier = "WireGuard v1 zx2c4 Jason@zx2c4.com"
@@ -349,6 +350,34 @@ func (state *HandshakeState) mixKeyAndGetEncryptionKey(input []byte) [HashSize]b
 	return hmacBlake2s(temporary[:], keyInput)
 }
 
+// mixKeyHashAndGetEncryptionKey uses WireGuard's three-output KDF. It mixes
+// input into the chaining key, absorbs the second output into the transcript
+// hash, and returns the third output as a key for an AEAD operation.
+//
+// The handshake uses this only once, for the preshared key. The extra output
+// is what makes an unset preshared key harmless: even an all-zero value still
+// travels through the chaining key and the hash, so a peer that has one
+// configured and a peer that does not end up with different transcripts and
+// simply fail to talk to each other, rather than silently agreeing on a
+// weaker session.
+func (state *HandshakeState) mixKeyHashAndGetEncryptionKey(input []byte) [HashSize]byte {
+	temporary := hmacBlake2s(state.ChainingKey[:], input)
+	state.ChainingKey = hmacBlake2s(temporary[:], []byte{1})
+
+	hashInput := make([]byte, 0, len(state.ChainingKey)+1)
+	hashInput = append(hashInput, state.ChainingKey[:]...)
+	hashInput = append(hashInput, 2)
+	hashMixin := hmacBlake2s(temporary[:], hashInput)
+
+	keyInput := make([]byte, 0, len(hashMixin)+1)
+	keyInput = append(keyInput, hashMixin[:]...)
+	keyInput = append(keyInput, 3)
+	encryptionKey := hmacBlake2s(temporary[:], keyInput)
+
+	state.mixHash(hashMixin[:])
+	return encryptionKey
+}
+
 // deriveMAC1Key binds MAC1 to the responder's static identity.
 func deriveMAC1Key(responderPublicKey PublicKey) [HashSize]byte {
 	input := make([]byte, 0, len(labelMAC1)+len(responderPublicKey))
@@ -538,10 +567,12 @@ func CreateResponse(
 		return HandshakeResponse{}, HandshakeState{}, err
 	}
 
-	// 5. Mix in the preshared key with a three-output KDF: the new chaining
-	//    key, a value that goes into the hash, and the key that encrypts the
-	//    empty payload. No preshared key is configured here, so an all-zero
-	//    value is used, which is what WireGuard does when the option is unset.
+	// An all-zero preshared key is what WireGuard uses when the optional
+	// symmetric key is not configured, and it is what this implementation
+	// always uses. The key returned here encrypts the empty payload in the
+	// next step, which is not implemented yet.
+	var presharedKey [PresharedKeySize]byte
+	_ = state.mixKeyHashAndGetEncryptionKey(presharedKey[:])
 
 	// 6. Encrypt an empty plaintext with that key, using the current hash as
 	//    additional data, and store the resulting 16-byte tag in the message.

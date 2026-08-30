@@ -805,3 +805,33 @@ func TestMixResponseStaticSharedSecretRejectsWrongIdentity(t *testing.T) {
 	expectedState.mixKey(strangerSecret[:])
 	require.NotEqual(t, expectedState.ChainingKey, state.ChainingKey)
 }
+
+func TestMixKeyHashAndGetEncryptionKey(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	chainingKeyBefore := state.ChainingKey
+	hashBefore := state.Hash
+	var presharedKey [PresharedKeySize]byte
+
+	encryptionKey := state.mixKeyHashAndGetEncryptionKey(presharedKey[:])
+
+	// The three outputs are recomputed here the way the whitepaper defines
+	// KDF3, so the test pins the construction and not just the fact that
+	// something changed.
+	temporary := hmacBlake2s(chainingKeyBefore[:], presharedKey[:])
+	expectedChainingKey := hmacBlake2s(temporary[:], []byte{1})
+	expectedHashMixin := hmacBlake2s(temporary[:], append(append([]byte{}, expectedChainingKey[:]...), 2))
+	expectedEncryptionKey := hmacBlake2s(temporary[:], append(append([]byte{}, expectedHashMixin[:]...), 3))
+
+	require.Equal(t, expectedChainingKey, state.ChainingKey)
+	require.Equal(t, expectedEncryptionKey, encryptionKey)
+
+	expectedState := HandshakeState{Hash: hashBefore}
+	expectedState.mixHash(expectedHashMixin[:])
+	require.Equal(t, expectedState.Hash, state.Hash)
+
+	// All three outputs are distinct, which is the whole point of taking
+	// three of them from one KDF.
+	require.NotEqual(t, expectedChainingKey, expectedHashMixin)
+	require.NotEqual(t, expectedChainingKey, expectedEncryptionKey)
+	require.NotEqual(t, expectedHashMixin, expectedEncryptionKey)
+}
