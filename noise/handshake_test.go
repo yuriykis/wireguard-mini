@@ -714,3 +714,34 @@ func TestSetResponseEphemeral(t *testing.T) {
 	require.Equal(t, uint32(7), message.ReceiverIndex)
 	require.Equal(t, [16]byte{}, message.EncryptedNothing)
 }
+
+func TestMixResponseEphemeralSharedSecret(t *testing.T) {
+	initiatorEphemeralPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorEphemeralPublic, err := initiatorEphemeralPrivate.PublicKey()
+	require.NoError(t, err)
+
+	state := NewHandshakeState(PublicKey{9})
+	message := HandshakeResponse{}
+	responderEphemeralPrivate, err := state.setResponseEphemeral(&message)
+	require.NoError(t, err)
+	hashBefore := state.Hash
+	expectedState := state
+
+	err = state.mixResponseEphemeralSharedSecret(
+		responderEphemeralPrivate,
+		initiatorEphemeralPublic,
+	)
+
+	require.NoError(t, err)
+	// The initiator computes the same secret from the other side of the
+	// exchange, which is what makes both transcripts agree.
+	sharedSecret, err := initiatorEphemeralPrivate.SharedSecret(
+		PublicKey(message.UnencryptedEphemeral),
+	)
+	require.NoError(t, err)
+	expectedState.mixKey(sharedSecret[:])
+	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
+	// This step feeds the chaining key only; the transcript hash is untouched.
+	require.Equal(t, hashBefore, state.Hash)
+}

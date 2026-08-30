@@ -519,14 +519,17 @@ func CreateResponse(
 	message.SenderIndex = senderIndex
 	message.ReceiverIndex = initiation.SenderIndex
 
-	_, err = state.setResponseEphemeral(&message)
+	ephemeralPrivate, err := state.setResponseEphemeral(&message)
 	if err != nil {
 		return HandshakeResponse{}, HandshakeState{}, err
 	}
 
-	// 3. Mix in DH(responder ephemeral, initiator ephemeral). This is the
-	//    first exchange that binds the two fresh key pairs together and is
-	//    what gives the session forward secrecy.
+	if err := state.mixResponseEphemeralSharedSecret(
+		ephemeralPrivate,
+		PublicKey(initiation.UnencryptedEphemeral),
+	); err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
 
 	// 4. Mix in DH(responder ephemeral, initiator static). This ties the fresh
 	//    session to the identity the responder learned from the initiation, so
@@ -547,6 +550,28 @@ func CreateResponse(
 	//    of scope.
 
 	return HandshakeResponse{}, state, errors.New("CreateResponse is not implemented yet")
+}
+
+// mixResponseEphemeralSharedSecret performs ECDH between the responder's fresh
+// ephemeral private key and the initiator's ephemeral public key read from the
+// initiation, and mixes the result into the chaining key.
+//
+// This is the exchange that gives the session forward secrecy: both halves are
+// thrown away when the handshake ends, so an attacker who later steals either
+// side's static private key still cannot reconstruct this secret and cannot
+// decrypt recorded traffic. Nothing is encrypted at this point, so the plain
+// mixKey is used and no encryption key is derived.
+func (state *HandshakeState) mixResponseEphemeralSharedSecret(
+	responderEphemeralPrivate PrivateKey,
+	initiatorEphemeralPublic PublicKey,
+) error {
+	sharedSecret, err := responderEphemeralPrivate.SharedSecret(initiatorEphemeralPublic)
+	if err != nil {
+		return err
+	}
+
+	state.mixKey(sharedSecret[:])
+	return nil
 }
 
 // setResponseEphemeral generates the responder's ephemeral key pair, puts the
