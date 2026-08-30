@@ -352,6 +352,28 @@ func (state *HandshakeState) encryptResponseNothing(
 	return nil
 }
 
+// setResponseMAC1 calculates MAC1 over all handshake response fields that
+// precede MAC1 and stores the result in the message. MAC2 is left unchanged.
+//
+// The key comes from the initiator's static public key, the opposite way round
+// from the initiation. MAC1 always proves that the sender knows the recipient's
+// static public key, so a host that is not a configured peer cannot even make
+// the message look worth processing, and its packets are dropped before any
+// expensive cryptography runs. In the initiation the recipient is the
+// responder, here it is the initiator.
+func setResponseMAC1(message *HandshakeResponse, initiatorStaticPublic PublicKey) {
+	data := message.MarshalBinary()
+	mac1Key := deriveMAC1Key(initiatorStaticPublic)
+	message.MAC1 = calculateMAC1(mac1Key, data[:responseMAC1Offset])
+}
+
+// setResponseMAC2 fills the second message authenticator. As in the
+// initiation, cookies are out of scope, so MAC2 is always zero and is zeroed
+// explicitly to keep that a decision rather than an omission.
+func setResponseMAC2(message *HandshakeResponse) {
+	message.MAC2 = [16]byte{}
+}
+
 // mixHash appends data to the transcript by hashing the current handshake hash
 // together with the new bytes.
 func (state *HandshakeState) mixHash(data []byte) {
@@ -606,12 +628,11 @@ func CreateResponse(
 		return HandshakeResponse{}, HandshakeState{}, err
 	}
 
-	// 7. Fill MAC1 over the finished message. Unlike the initiation, this MAC
-	//    is keyed on the initiator's static public key, because it authorizes
-	//    the message towards the initiator. MAC2 stays zero: cookies are out
-	//    of scope.
-
-	return HandshakeResponse{}, state, errors.New("CreateResponse is not implemented yet")
+	// The two authenticators cover the finished message and are not part of
+	// the Noise transcript, so they come last and do not touch the state.
+	setResponseMAC1(&message, initiatorStaticPublic)
+	setResponseMAC2(&message)
+	return message, state, nil
 }
 
 // mixResponseEphemeralSharedSecret performs ECDH between the responder's fresh

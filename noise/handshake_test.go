@@ -879,3 +879,103 @@ func TestEncryptResponseNothingRejectsADifferentTranscript(t *testing.T) {
 	_, err = aead.Open(nil, nonce[:], message.EncryptedNothing[:], wrongHash[:])
 	require.Error(t, err)
 }
+
+func TestSetResponseMAC1(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorStaticPublic, err := initiatorStaticPrivate.PublicKey()
+	require.NoError(t, err)
+	message := HandshakeResponse{SenderIndex: 42, ReceiverIndex: 7}
+
+	setResponseMAC1(&message, initiatorStaticPublic)
+
+	data := message.MarshalBinary()
+	expected := calculateMAC1(deriveMAC1Key(initiatorStaticPublic), data[:responseMAC1Offset])
+	require.Equal(t, expected, message.MAC1)
+	require.Equal(t, expected[:], data[responseMAC1Offset:responseMAC2Offset])
+
+	// A host that does not know the initiator's static public key cannot
+	// produce this value, which is what lets the initiator drop foreign
+	// packets before doing any real cryptography.
+	strangerPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	strangerPublic, err := strangerPrivate.PublicKey()
+	require.NoError(t, err)
+	strangerMAC1 := calculateMAC1(deriveMAC1Key(strangerPublic), data[:responseMAC1Offset])
+	require.NotEqual(t, strangerMAC1, message.MAC1)
+}
+
+func TestSetResponseMAC2(t *testing.T) {
+	message := HandshakeResponse{MAC2: [16]byte{1, 2, 3}}
+
+	setResponseMAC2(&message)
+
+	require.Equal(t, [16]byte{}, message.MAC2)
+}
+
+func TestCreateResponseProducesAWellFormedMessage(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorStaticPublic, err := initiatorStaticPrivate.PublicKey()
+	require.NoError(t, err)
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
+
+	initiation, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
+	require.NoError(t, err)
+	_, learnedInitiatorPublic, _, stateAfterInitiation, err := ConsumeInitiation(
+		responderStaticPrivate,
+		initiation.MarshalBinary(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, initiatorStaticPublic, learnedInitiatorPublic)
+
+	response, stateAfterResponse, err := CreateResponse(
+		learnedInitiatorPublic,
+		initiation,
+		stateAfterInitiation,
+	)
+
+	require.NoError(t, err)
+	parsed, err := ParseHandshakeResponse(response.MarshalBinary())
+	require.NoError(t, err)
+	require.Equal(t, response, parsed)
+	require.Equal(t, initiation.SenderIndex, response.ReceiverIndex)
+	require.NotZero(t, response.SenderIndex)
+	require.NotEqual(t, [32]byte{}, response.UnencryptedEphemeral)
+	require.NotEqual(t, [16]byte{}, response.EncryptedNothing)
+	require.Equal(t, [16]byte{}, response.MAC2)
+	// Building the response continues the transcript, so neither value can be
+	// left where consuming the initiation stopped.
+	require.NotEqual(t, stateAfterInitiation.Hash, stateAfterResponse.Hash)
+	require.NotEqual(t, stateAfterInitiation.ChainingKey, stateAfterResponse.ChainingKey)
+}
+
+func TestCreateResponseUsesFreshEphemeralEveryTime(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
+
+	initiation, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
+	require.NoError(t, err)
+	_, initiatorStaticPublic, _, state, err := ConsumeInitiation(
+		responderStaticPrivate,
+		initiation.MarshalBinary(),
+	)
+	require.NoError(t, err)
+
+	first, firstState, err := CreateResponse(initiatorStaticPublic, initiation, state)
+	require.NoError(t, err)
+	second, secondState, err := CreateResponse(initiatorStaticPublic, initiation, state)
+	require.NoError(t, err)
+
+	require.NotEqual(t, first.UnencryptedEphemeral, second.UnencryptedEphemeral)
+	require.NotEqual(t, first.SenderIndex, second.SenderIndex)
+	require.NotEqual(t, first.EncryptedNothing, second.EncryptedNothing)
+	require.NotEqual(t, firstState.ChainingKey, secondState.ChainingKey)
+}
