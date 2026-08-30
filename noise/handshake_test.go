@@ -745,3 +745,63 @@ func TestMixResponseEphemeralSharedSecret(t *testing.T) {
 	// This step feeds the chaining key only; the transcript hash is untouched.
 	require.Equal(t, hashBefore, state.Hash)
 }
+
+func TestMixResponseStaticSharedSecret(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorStaticPublic, err := initiatorStaticPrivate.PublicKey()
+	require.NoError(t, err)
+
+	state := NewHandshakeState(PublicKey{9})
+	message := HandshakeResponse{}
+	responderEphemeralPrivate, err := state.setResponseEphemeral(&message)
+	require.NoError(t, err)
+	hashBefore := state.Hash
+	expectedState := state
+
+	err = state.mixResponseStaticSharedSecret(
+		responderEphemeralPrivate,
+		initiatorStaticPublic,
+	)
+
+	require.NoError(t, err)
+	// The initiator reaches the same secret with its static private key and
+	// the responder's ephemeral public key taken from the response.
+	sharedSecret, err := initiatorStaticPrivate.SharedSecret(
+		PublicKey(message.UnencryptedEphemeral),
+	)
+	require.NoError(t, err)
+	expectedState.mixKey(sharedSecret[:])
+	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
+	require.Equal(t, hashBefore, state.Hash)
+}
+
+func TestMixResponseStaticSharedSecretRejectsWrongIdentity(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorStaticPublic, err := initiatorStaticPrivate.PublicKey()
+	require.NoError(t, err)
+	strangerStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+
+	state := NewHandshakeState(PublicKey{9})
+	message := HandshakeResponse{}
+	responderEphemeralPrivate, err := state.setResponseEphemeral(&message)
+	require.NoError(t, err)
+	expectedState := state
+
+	require.NoError(t, state.mixResponseStaticSharedSecret(
+		responderEphemeralPrivate,
+		initiatorStaticPublic,
+	))
+
+	// Anybody else derives a different chaining key and therefore a different
+	// transcript, which is what stops a third party from finishing this
+	// handshake.
+	strangerSecret, err := strangerStaticPrivate.SharedSecret(
+		PublicKey(message.UnencryptedEphemeral),
+	)
+	require.NoError(t, err)
+	expectedState.mixKey(strangerSecret[:])
+	require.NotEqual(t, expectedState.ChainingKey, state.ChainingKey)
+}

@@ -531,9 +531,12 @@ func CreateResponse(
 		return HandshakeResponse{}, HandshakeState{}, err
 	}
 
-	// 4. Mix in DH(responder ephemeral, initiator static). This ties the fresh
-	//    session to the identity the responder learned from the initiation, so
-	//    only the holder of that static key can finish the handshake.
+	if err := state.mixResponseStaticSharedSecret(
+		ephemeralPrivate,
+		initiatorStaticPublic,
+	); err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
 
 	// 5. Mix in the preshared key with a three-output KDF: the new chaining
 	//    key, a value that goes into the hash, and the key that encrypts the
@@ -566,6 +569,29 @@ func (state *HandshakeState) mixResponseEphemeralSharedSecret(
 	initiatorEphemeralPublic PublicKey,
 ) error {
 	sharedSecret, err := responderEphemeralPrivate.SharedSecret(initiatorEphemeralPublic)
+	if err != nil {
+		return err
+	}
+
+	state.mixKey(sharedSecret[:])
+	return nil
+}
+
+// mixResponseStaticSharedSecret performs ECDH between the responder's
+// ephemeral private key and the static public key of the initiator, which the
+// responder learned by decrypting the initiation, and mixes the result into
+// the chaining key.
+//
+// This is the step that ties the fresh session to an identity. Only the holder
+// of the matching static private key can compute the same secret, so only that
+// peer will reach the same transcript and be able to verify the tag the
+// response carries. Like the previous exchange it encrypts nothing yet, so the
+// plain mixKey is used.
+func (state *HandshakeState) mixResponseStaticSharedSecret(
+	responderEphemeralPrivate PrivateKey,
+	initiatorStaticPublic PublicKey,
+) error {
+	sharedSecret, err := responderEphemeralPrivate.SharedSecret(initiatorStaticPublic)
 	if err != nil {
 		return err
 	}
