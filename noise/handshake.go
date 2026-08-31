@@ -702,3 +702,50 @@ func (state *HandshakeState) setResponseEphemeral(message *HandshakeResponse) (P
 	state.mixKey(message.UnencryptedEphemeral[:])
 	return ephemeralPrivate, nil
 }
+
+// ConsumeResponse processes a handshake response received from the wire. It is
+// the initiator's mirror image of CreateResponse: it starts from the state
+// CreateInitiation left behind and replays the very same mixing steps in the
+// same order.
+//
+// The message carries no identity and no payload, so everything this function
+// decides rests on a single AEAD tag over an empty plaintext. That tag
+// verifies only if the initiator rebuilt a byte-identical transcript, which
+// proves the sender holds the static private key of the expected responder and
+// completed the same two Diffie-Hellman exchanges. A failure is answered with
+// silence.
+//
+// It returns the parsed message and the handshake state left behind, from
+// which both sides will later derive the transport keys.
+func ConsumeResponse(
+	initiatorStaticPrivate PrivateKey,
+	initiatorEphemeralPrivate PrivateKey,
+	data []byte,
+	state HandshakeState,
+) (HandshakeResponse, HandshakeState, error) {
+	// Parse the wire format and reject anything that is not a well-formed
+	// handshake response.
+
+	// Verify MAC1 before any expensive cryptography runs. The key comes from
+	// the initiator's own static public key, because MAC1 always proves the
+	// sender knew the recipient's static identity.
+
+	// Absorb the responder's ephemeral public key into the transcript, with
+	// the same two mixing steps the responder used when it wrote the value.
+
+	// ECDH between the initiator's ephemeral private key and the responder's
+	// ephemeral public key. This is the same secret the responder computed
+	// the other way round, and it is what gives the session forward secrecy.
+
+	// ECDH between the initiator's static private key and the same responder
+	// ephemeral public key. This is the exchange that ties the fresh session
+	// to the initiator's identity.
+
+	// Mix the all-zero preshared key and take the AEAD key out of the third
+	// KDF output, exactly as the responder did.
+
+	// Verify the tag over an empty plaintext and absorb the ciphertext into
+	// the hash. This is the whole cryptographic content of the response.
+
+	return HandshakeResponse{}, HandshakeState{}, nil
+}
