@@ -723,8 +723,10 @@ func ConsumeResponse(
 	data []byte,
 	state HandshakeState,
 ) (HandshakeResponse, HandshakeState, error) {
-	// Parse the wire format and reject anything that is not a well-formed
-	// handshake response.
+	message, err := ParseHandshakeResponse(data)
+	if err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
 
 	// Verify MAC1 before any expensive cryptography runs. The key comes from
 	// the initiator's own static public key, because MAC1 always proves the
@@ -747,5 +749,5 @@ func ConsumeResponse(
 	// Verify the tag over an empty plaintext and absorb the ciphertext into
 	// the hash. This is the whole cryptographic content of the response.
 
-	return HandshakeResponse{}, HandshakeState{}, nil
+	return message, state, nil
 }

@@ -979,3 +979,48 @@ func TestCreateResponseUsesFreshEphemeralEveryTime(t *testing.T) {
 	require.NotEqual(t, first.EncryptedNothing, second.EncryptedNothing)
 	require.NotEqual(t, firstState.ChainingKey, secondState.ChainingKey)
 }
+
+func TestConsumeResponseRejectsMalformedMessage(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorEphemeralPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+
+	valid := testHandshakeResponse().MarshalBinary()
+
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr string
+	}{
+		{name: "too short", data: valid[:HandshakeResponseSize-1], wantErr: "invalid handshake response length"},
+		{name: "wrong type", data: withByte(valid, 0, 1), wantErr: "invalid handshake response type"},
+		{name: "non-zero reserved byte", data: withByte(valid, 2, 1), wantErr: "reserved bytes must be zero"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := ConsumeResponse(initiatorPrivate, initiatorEphemeralPrivate, tt.data, HandshakeState{})
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestConsumeResponseParsesEveryField(t *testing.T) {
+	initiatorPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorEphemeralPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+
+	want := testHandshakeResponse()
+
+	got, _, err := ConsumeResponse(
+		initiatorPrivate,
+		initiatorEphemeralPrivate,
+		want.MarshalBinary(),
+		HandshakeState{},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
