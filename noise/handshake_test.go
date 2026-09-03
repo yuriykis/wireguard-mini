@@ -1007,15 +1007,28 @@ func TestConsumeResponseRejectsMalformedMessage(t *testing.T) {
 }
 
 func TestConsumeResponseParsesEveryField(t *testing.T) {
-	initiatorPrivate, err := GeneratePrivateKey()
+	initiatorStaticPrivate, err := GeneratePrivateKey()
 	require.NoError(t, err)
 	initiatorEphemeralPrivate, err := GeneratePrivateKey()
 	require.NoError(t, err)
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
 
-	want := testHandshakeResponse()
+	initiation, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
+	require.NoError(t, err)
+	_, initiatorStaticPublic, _, stateAfterInitiation, err := ConsumeInitiation(
+		responderStaticPrivate,
+		initiation.MarshalBinary(),
+	)
+	require.NoError(t, err)
+
+	want, _, err := CreateResponse(initiatorStaticPublic, initiation, stateAfterInitiation)
+	require.NoError(t, err)
 
 	got, _, err := ConsumeResponse(
-		initiatorPrivate,
+		initiatorStaticPrivate,
 		initiatorEphemeralPrivate,
 		want.MarshalBinary(),
 		HandshakeState{},
@@ -1023,4 +1036,53 @@ func TestConsumeResponseParsesEveryField(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, want, got)
+}
+
+func TestConsumeResponseRejectsWrongMAC1(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	initiatorEphemeralPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
+
+	initiation, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
+	require.NoError(t, err)
+	_, initiatorStaticPublic, _, stateAfterInitiation, err := ConsumeInitiation(
+		responderStaticPrivate,
+		initiation.MarshalBinary(),
+	)
+	require.NoError(t, err)
+
+	response, _, err := CreateResponse(initiatorStaticPublic, initiation, stateAfterInitiation)
+	require.NoError(t, err)
+
+	t.Run("tampered mac1", func(t *testing.T) {
+		data := response.MarshalBinary()
+		data[responseMAC1Offset] ^= 0x01
+
+		_, _, err := ConsumeResponse(initiatorStaticPrivate, initiatorEphemeralPrivate, data, HandshakeState{})
+
+		require.ErrorContains(t, err, "MAC1 mismatch")
+	})
+
+	t.Run("tampered payload", func(t *testing.T) {
+		data := response.MarshalBinary()
+		data[responseEphemeralOffset] ^= 0x01
+
+		_, _, err := ConsumeResponse(initiatorStaticPrivate, initiatorEphemeralPrivate, data, HandshakeState{})
+
+		require.ErrorContains(t, err, "MAC1 mismatch")
+	})
+
+	t.Run("addressed to another initiator", func(t *testing.T) {
+		otherPrivate, err := GeneratePrivateKey()
+		require.NoError(t, err)
+
+		_, _, err = ConsumeResponse(otherPrivate, initiatorEphemeralPrivate, response.MarshalBinary(), HandshakeState{})
+
+		require.ErrorContains(t, err, "MAC1 mismatch")
+	})
 }

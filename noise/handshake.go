@@ -429,11 +429,11 @@ func (state *HandshakeState) mixKeyHashAndGetEncryptionKey(input []byte) [HashSi
 	return encryptionKey
 }
 
-// deriveMAC1Key binds MAC1 to the responder's static identity.
-func deriveMAC1Key(responderPublicKey PublicKey) [HashSize]byte {
-	input := make([]byte, 0, len(labelMAC1)+len(responderPublicKey))
+// deriveMAC1Key binds MAC1 to the recipient's static identity.
+func deriveMAC1Key(recipientPublicKey PublicKey) [HashSize]byte {
+	input := make([]byte, 0, len(labelMAC1)+len(recipientPublicKey))
 	input = append(input, labelMAC1...)
-	input = append(input, responderPublicKey[:]...)
+	input = append(input, recipientPublicKey[:]...)
 	return blake2s.Sum256(input)
 }
 
@@ -469,6 +469,16 @@ func verifyInitiationMAC1(data []byte, responderPublicKey PublicKey) error {
 
 	if !hmac.Equal(expected[:], data[mac1Offset:mac2Offset]) {
 		return errors.New("handshake initiation MAC1 mismatch")
+	}
+	return nil
+}
+
+func verifyResponseMAC1(data []byte, initiatorStaticPublic PublicKey) error {
+	mac1Key := deriveMAC1Key(initiatorStaticPublic)
+	expected := calculateMAC1(mac1Key, data[:responseMAC1Offset])
+
+	if !hmac.Equal(expected[:], data[responseMAC1Offset:responseMAC2Offset]) {
+		return errors.New("handshake response MAC1 mismatch")
 	}
 	return nil
 }
@@ -728,9 +738,13 @@ func ConsumeResponse(
 		return HandshakeResponse{}, HandshakeState{}, err
 	}
 
-	// Verify MAC1 before any expensive cryptography runs. The key comes from
-	// the initiator's own static public key, because MAC1 always proves the
-	// sender knew the recipient's static identity.
+	initiatorStaticPublic, err := initiatorStaticPrivate.PublicKey()
+	if err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
+	if err := verifyResponseMAC1(data, initiatorStaticPublic); err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
 
 	// Absorb the responder's ephemeral public key into the transcript, with
 	// the same two mixing steps the responder used when it wrote the value.
