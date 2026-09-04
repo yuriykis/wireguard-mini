@@ -264,7 +264,7 @@ func TestCreateInitiationFillsEveryField(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, _, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	require.NotEqual(t, [32]byte{}, message.UnencryptedEphemeral)
@@ -290,9 +290,9 @@ func TestCreateInitiationUsesFreshEphemeralEveryTime(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	first, firstState, err := CreateInitiation(initiatorPrivate, responderPublic)
+	first, _, firstState, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
-	second, secondState, err := CreateInitiation(initiatorPrivate, responderPublic)
+	second, _, secondState, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	require.NotEqual(t, first.UnencryptedEphemeral, second.UnencryptedEphemeral)
@@ -315,7 +315,7 @@ func TestCreateInitiationIsReadableByTheResponder(t *testing.T) {
 	require.NoError(t, err)
 
 	before := newTAI64NTimestamp(time.Now())
-	message, initiatorState, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, initiatorState, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 	after := newTAI64NTimestamp(time.Now())
 
@@ -387,7 +387,7 @@ func TestConsumeInitiationParsesEveryField(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	want, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	want, _, _, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	got, _, _, _, err := ConsumeInitiation(responderPrivate, want.MarshalBinary())
@@ -404,7 +404,7 @@ func TestConsumeInitiationRejectsWrongMAC1(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, _, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	t.Run("tampered mac1", func(t *testing.T) {
@@ -443,7 +443,7 @@ func TestConsumeInitiationAcceptsNonZeroMAC2(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, _, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	// A peer that already holds a cookie, such as the kernel implementation
@@ -479,7 +479,7 @@ func TestConsumeInitiationRebuildsTheTranscript(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, _, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	// Rebuild the responder's transcript step by step from the wire values and
@@ -547,7 +547,7 @@ func TestConsumeInitiationLearnsTheInitiatorsIdentity(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, _, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	_, got, _, _, err := ConsumeInitiation(responderPrivate, message.MarshalBinary())
@@ -564,7 +564,7 @@ func TestConsumeInitiationRejectsTamperedStaticField(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, _, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	// MAC1 covers the static field, so it has to be recomputed after the edit.
@@ -617,7 +617,7 @@ func TestConsumeInitiationRejectsTamperedTimestampField(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, _, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	message.EncryptedTimestamp[0] ^= 0x01
@@ -636,7 +636,7 @@ func TestConsumeInitiationRejectsAnotherInitiator(t *testing.T) {
 	responderPublic, err := responderPrivate.PublicKey()
 	require.NoError(t, err)
 
-	message, _, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, _, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 
 	// An attacker who knows the responder's public key can reach the static
@@ -674,7 +674,7 @@ func TestCreateInitiationAndConsumeInitiationAgree(t *testing.T) {
 	require.NoError(t, err)
 
 	before := newTAI64NTimestamp(time.Now())
-	message, initiatorState, err := CreateInitiation(initiatorPrivate, responderPublic)
+	message, _, initiatorState, err := CreateInitiation(initiatorPrivate, responderPublic)
 	require.NoError(t, err)
 	after := newTAI64NTimestamp(time.Now())
 
@@ -923,7 +923,7 @@ func TestCreateResponseProducesAWellFormedMessage(t *testing.T) {
 	responderStaticPublic, err := responderStaticPrivate.PublicKey()
 	require.NoError(t, err)
 
-	initiation, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
+	initiation, _, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
 	require.NoError(t, err)
 	_, learnedInitiatorPublic, _, stateAfterInitiation, err := ConsumeInitiation(
 		responderStaticPrivate,
@@ -961,7 +961,7 @@ func TestCreateResponseUsesFreshEphemeralEveryTime(t *testing.T) {
 	responderStaticPublic, err := responderStaticPrivate.PublicKey()
 	require.NoError(t, err)
 
-	initiation, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
+	initiation, _, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
 	require.NoError(t, err)
 	_, initiatorStaticPublic, _, state, err := ConsumeInitiation(
 		responderStaticPrivate,
@@ -1016,7 +1016,7 @@ func TestConsumeResponseParsesEveryField(t *testing.T) {
 	responderStaticPublic, err := responderStaticPrivate.PublicKey()
 	require.NoError(t, err)
 
-	initiation, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
+	initiation, _, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
 	require.NoError(t, err)
 	_, initiatorStaticPublic, _, stateAfterInitiation, err := ConsumeInitiation(
 		responderStaticPrivate,
@@ -1048,7 +1048,7 @@ func TestConsumeResponseRejectsWrongMAC1(t *testing.T) {
 	responderStaticPublic, err := responderStaticPrivate.PublicKey()
 	require.NoError(t, err)
 
-	initiation, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
+	initiation, _, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
 	require.NoError(t, err)
 	_, initiatorStaticPublic, _, stateAfterInitiation, err := ConsumeInitiation(
 		responderStaticPrivate,
@@ -1106,4 +1106,48 @@ func TestConsumeResponseEphemeralMirrorsSetResponseEphemeral(t *testing.T) {
 
 	require.Equal(t, responderState, initiatorState)
 	require.NotEqual(t, NewHandshakeState(responderStaticPublic), initiatorState)
+}
+
+func TestConsumeResponseReachesTheSameChainingKeyAsTheResponder(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
+
+	initiation, initiatorEphemeralPrivate, stateAfterInitiation, err := CreateInitiation(
+		initiatorStaticPrivate,
+		responderStaticPublic,
+	)
+	require.NoError(t, err)
+
+	_, initiatorStaticPublic, _, responderState, err := ConsumeInitiation(
+		responderStaticPrivate,
+		initiation.MarshalBinary(),
+	)
+	require.NoError(t, err)
+
+	// The responder side is played by hand so the test knows its ephemeral key
+	// and can stop right after the first Diffie-Hellman exchange.
+	var message HandshakeResponse
+	message.ReceiverIndex = initiation.SenderIndex
+	responderEphemeralPrivate, err := responderState.setResponseEphemeral(&message)
+	require.NoError(t, err)
+	require.NoError(t, responderState.mixResponseEphemeralSharedSecret(
+		responderEphemeralPrivate,
+		PublicKey(initiation.UnencryptedEphemeral),
+	))
+	setResponseMAC1(&message, initiatorStaticPublic)
+	setResponseMAC2(&message)
+
+	_, initiatorState, err := ConsumeResponse(
+		initiatorStaticPrivate,
+		initiatorEphemeralPrivate,
+		message.MarshalBinary(),
+		stateAfterInitiation,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, responderState.ChainingKey, initiatorState.ChainingKey)
 }

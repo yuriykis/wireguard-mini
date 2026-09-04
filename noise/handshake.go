@@ -44,14 +44,15 @@ func NewHandshakeState(responderPublicKey PublicKey) HandshakeState {
 	return state
 }
 
-// CreateInitiation builds a handshake initiation and the state it leaves behind.
+// CreateInitiation builds a handshake initiation, the initiator's ephemeral
+// private key, and the state it leaves behind.
 func CreateInitiation(
 	initiatorStaticPrivate PrivateKey,
 	responderStaticPublic PublicKey,
-) (HandshakeInitiation, HandshakeState, error) {
+) (HandshakeInitiation, PrivateKey, HandshakeState, error) {
 	initiatorStaticPublic, err := initiatorStaticPrivate.PublicKey()
 	if err != nil {
-		return HandshakeInitiation{}, HandshakeState{}, err
+		return HandshakeInitiation{}, PrivateKey{}, HandshakeState{}, err
 	}
 
 	state := NewHandshakeState(responderStaticPublic)
@@ -59,12 +60,12 @@ func CreateInitiation(
 
 	message.SenderIndex, err = generateSenderIndex()
 	if err != nil {
-		return HandshakeInitiation{}, HandshakeState{}, err
+		return HandshakeInitiation{}, PrivateKey{}, HandshakeState{}, err
 	}
 
 	ephemeralPrivate, err := state.setInitiationEphemeral(&message)
 	if err != nil {
-		return HandshakeInitiation{}, HandshakeState{}, err
+		return HandshakeInitiation{}, PrivateKey{}, HandshakeState{}, err
 	}
 
 	staticEncryptionKey, err := state.deriveInitiationStaticEncryptionKey(
@@ -72,14 +73,14 @@ func CreateInitiation(
 		responderStaticPublic,
 	)
 	if err != nil {
-		return HandshakeInitiation{}, HandshakeState{}, err
+		return HandshakeInitiation{}, PrivateKey{}, HandshakeState{}, err
 	}
 	if err := state.encryptInitiationStatic(
 		&message,
 		staticEncryptionKey,
 		initiatorStaticPublic,
 	); err != nil {
-		return HandshakeInitiation{}, HandshakeState{}, err
+		return HandshakeInitiation{}, PrivateKey{}, HandshakeState{}, err
 	}
 
 	timestampEncryptionKey, err := state.deriveInitiationTimestampEncryptionKey(
@@ -87,20 +88,20 @@ func CreateInitiation(
 		responderStaticPublic,
 	)
 	if err != nil {
-		return HandshakeInitiation{}, HandshakeState{}, err
+		return HandshakeInitiation{}, PrivateKey{}, HandshakeState{}, err
 	}
 	if err := state.encryptInitiationTimestamp(
 		&message,
 		timestampEncryptionKey,
 		newTAI64NTimestamp(time.Now()),
 	); err != nil {
-		return HandshakeInitiation{}, HandshakeState{}, err
+		return HandshakeInitiation{}, PrivateKey{}, HandshakeState{}, err
 	}
 
 	// The authenticators are not part of the Noise transcript.
 	setInitiationMAC1(&message, responderStaticPublic)
 	setInitiationMAC2(&message)
-	return message, state, nil
+	return message, ephemeralPrivate, state, nil
 }
 
 func (state *HandshakeState) setInitiationEphemeral(message *HandshakeInitiation) (PrivateKey, error) {
@@ -590,7 +591,13 @@ func ConsumeResponse(
 
 	state.consumeResponseEphemeral(message)
 
-	// TODO: ECDH initiator ephemeral / responder ephemeral.
+	ephemeralSharedSecret, err := initiatorEphemeralPrivate.SharedSecret(
+		PublicKey(message.UnencryptedEphemeral),
+	)
+	if err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
+	state.mixKey(ephemeralSharedSecret[:])
 
 	// TODO: ECDH initiator static / responder ephemeral.
 
