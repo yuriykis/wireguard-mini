@@ -28,9 +28,7 @@ const (
 	responseMAC2Offset             = 76
 )
 
-// HandshakeInitiation contains the fields carried by WireGuard's first
-// handshake message. The message type and the three reserved zero bytes are
-// part of the wire format, so callers do not have to set them.
+// HandshakeInitiation contains the fields carried by WireGuard's first handshake message.
 type HandshakeInitiation struct {
 	SenderIndex          uint32
 	UnencryptedEphemeral [32]byte
@@ -40,10 +38,7 @@ type HandshakeInitiation struct {
 	MAC2                 [16]byte
 }
 
-// HandshakeResponse contains the fields carried by WireGuard's second
-// handshake message. EncryptedNothing holds only the 16-byte AEAD tag produced
-// by encrypting an empty plaintext. The message type and the three reserved
-// zero bytes are part of the wire format, so callers do not have to set them.
+// HandshakeResponse contains the fields carried by WireGuard's second handshake message.
 type HandshakeResponse struct {
 	SenderIndex          uint32
 	ReceiverIndex        uint32
@@ -53,8 +48,7 @@ type HandshakeResponse struct {
 	MAC2                 [16]byte
 }
 
-// MarshalBinary encodes a handshake response in WireGuard's 92-byte wire
-// format.
+// MarshalBinary encodes a handshake response in WireGuard's 92-byte wire format.
 func (m HandshakeResponse) MarshalBinary() []byte {
 	data := make([]byte, HandshakeResponseSize)
 	data[0] = handshakeResponseType
@@ -90,8 +84,7 @@ func ParseHandshakeResponse(data []byte) (HandshakeResponse, error) {
 	return message, nil
 }
 
-// MarshalBinary encodes a handshake initiation in WireGuard's 148-byte wire
-// format.
+// MarshalBinary encodes a handshake initiation in WireGuard's 148-byte wire format.
 func (m HandshakeInitiation) MarshalBinary() []byte {
 	data := make([]byte, HandshakeInitiationSize)
 	data[0] = handshakeInitiationType
@@ -104,9 +97,7 @@ func (m HandshakeInitiation) MarshalBinary() []byte {
 	return data
 }
 
-// ParseHandshakeInitiation decodes a WireGuard handshake initiation. It
-// accepts only the exact message length, type, and reserved-zero bytes defined
-// by the protocol.
+// ParseHandshakeInitiation decodes a WireGuard handshake initiation.
 func ParseHandshakeInitiation(data []byte) (HandshakeInitiation, error) {
 	var message HandshakeInitiation
 

@@ -15,16 +15,14 @@ type PrivateKey [KeySize]byte
 // PublicKey is a WireGuard static or ephemeral Curve25519 public key.
 type PublicKey [KeySize]byte
 
-// GeneratePrivateKey creates a new private key using the operating system's
-// cryptographically secure random number generator.
+// GeneratePrivateKey creates a new random private key.
 func GeneratePrivateKey() (PrivateKey, error) {
 	var key PrivateKey
 	if _, err := rand.Read(key[:]); err != nil {
 		return PrivateKey{}, fmt.Errorf("generate private key: %w", err)
 	}
 
-	// X25519 also clamps its scalar internally. Doing it here ensures the
-	// stored key itself has WireGuard's canonical private-key representation.
+	// Clamped here as well as inside X25519, so the stored key is canonical.
 	key[0] &= 248
 	key[31] = (key[31] & 127) | 64
 	return key, nil
@@ -42,9 +40,7 @@ func (key PrivateKey) PublicKey() (PublicKey, error) {
 	return publicKey, nil
 }
 
-// SharedSecret performs X25519 Diffie-Hellman using the local private key and
-// the peer's public key. X25519 rejects low-order public keys whose result
-// would be the all-zero shared secret.
+// SharedSecret performs X25519 Diffie-Hellman with the peer's public key.
 func (key PrivateKey) SharedSecret(peerPublicKey PublicKey) ([KeySize]byte, error) {
 	sharedBytes, err := curve25519.X25519(key[:], peerPublicKey[:])
 	if err != nil {

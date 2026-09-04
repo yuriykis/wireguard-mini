@@ -153,7 +153,7 @@ func internetChecksum(data []byte) uint16 {
 		sum += uint32(data[0]) << 8
 	}
 
-	// Add every carry back into the low 16 bits (one's-complement addition).
+	// One's-complement addition folds every carry back into the low 16 bits.
 	for sum>>16 != 0 {
 		sum = (sum & 0xffff) + (sum >> 16)
 	}

@@ -1086,3 +1086,24 @@ func TestConsumeResponseRejectsWrongMAC1(t *testing.T) {
 		require.ErrorContains(t, err, "MAC1 mismatch")
 	})
 }
+
+func TestConsumeResponseEphemeralMirrorsSetResponseEphemeral(t *testing.T) {
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
+
+	// Both sides start from the same transcript and absorb the same ephemeral
+	// public key, one while writing it, the other while reading it.
+	responderState := NewHandshakeState(responderStaticPublic)
+	initiatorState := responderState
+
+	var message HandshakeResponse
+	_, err = responderState.setResponseEphemeral(&message)
+	require.NoError(t, err)
+
+	initiatorState.consumeResponseEphemeral(message)
+
+	require.Equal(t, responderState, initiatorState)
+	require.NotEqual(t, NewHandshakeState(responderStaticPublic), initiatorState)
+}
