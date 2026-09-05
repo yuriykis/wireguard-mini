@@ -1129,7 +1129,7 @@ func TestConsumeResponseReachesTheSameChainingKeyAsTheResponder(t *testing.T) {
 	require.NoError(t, err)
 
 	// The responder side is played by hand so the test knows its ephemeral key
-	// and can stop right after the first Diffie-Hellman exchange.
+	// and can stop right after both Diffie-Hellman exchanges.
 	var message HandshakeResponse
 	message.ReceiverIndex = initiation.SenderIndex
 	responderEphemeralPrivate, err := responderState.setResponseEphemeral(&message)
@@ -1137,6 +1137,10 @@ func TestConsumeResponseReachesTheSameChainingKeyAsTheResponder(t *testing.T) {
 	require.NoError(t, responderState.mixResponseEphemeralSharedSecret(
 		responderEphemeralPrivate,
 		PublicKey(initiation.UnencryptedEphemeral),
+	))
+	require.NoError(t, responderState.mixResponseStaticSharedSecret(
+		responderEphemeralPrivate,
+		initiatorStaticPublic,
 	))
 	setResponseMAC1(&message, initiatorStaticPublic)
 	setResponseMAC2(&message)

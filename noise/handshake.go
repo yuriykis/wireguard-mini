@@ -599,7 +599,13 @@ func ConsumeResponse(
 	}
 	state.mixKey(ephemeralSharedSecret[:])
 
-	// TODO: ECDH initiator static / responder ephemeral.
+	staticSharedSecret, err := initiatorStaticPrivate.SharedSecret(
+		PublicKey(message.UnencryptedEphemeral),
+	)
+	if err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
+	state.mixKey(staticSharedSecret[:])
 
 	// TODO: mix the all-zero preshared key and derive the AEAD key.
 
