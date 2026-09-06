@@ -289,6 +289,24 @@ func (state *HandshakeState) encryptResponseNothing(
 	return nil
 }
 
+func (state *HandshakeState) decryptResponseNothing(
+	message HandshakeResponse,
+	decryptionKey [HashSize]byte,
+) error {
+	aead, err := chacha20poly1305.New(decryptionKey[:])
+	if err != nil {
+		return err
+	}
+
+	var nonce [chacha20poly1305.NonceSize]byte
+	if _, err := aead.Open(nil, nonce[:], message.EncryptedNothing[:], state.Hash[:]); err != nil {
+		return fmt.Errorf("decrypt handshake response nothing: %w", err)
+	}
+
+	state.mixHash(message.EncryptedNothing[:])
+	return nil
+}
+
 // The MAC1 key is the recipient's static public key, here the initiator's.
 func setResponseMAC1(message *HandshakeResponse, initiatorStaticPublic PublicKey) {
 	data := message.MarshalBinary()
@@ -607,9 +625,13 @@ func ConsumeResponse(
 	}
 	state.mixKey(staticSharedSecret[:])
 
-	// TODO: mix the all-zero preshared key and derive the AEAD key.
+	// An unconfigured preshared key is all-zero.
+	var presharedKey [PresharedKeySize]byte
+	decryptionKey := state.mixKeyHashAndGetEncryptionKey(presharedKey[:])
 
-	// TODO: verify the tag over an empty plaintext and mix it into the hash.
+	if err := state.decryptResponseNothing(message, decryptionKey); err != nil {
+		return HandshakeResponse{}, HandshakeState{}, err
+	}
 
 	return message, state, nil
 }

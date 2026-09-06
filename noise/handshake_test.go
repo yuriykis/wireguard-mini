@@ -1006,38 +1006,6 @@ func TestConsumeResponseRejectsMalformedMessage(t *testing.T) {
 	}
 }
 
-func TestConsumeResponseParsesEveryField(t *testing.T) {
-	initiatorStaticPrivate, err := GeneratePrivateKey()
-	require.NoError(t, err)
-	initiatorEphemeralPrivate, err := GeneratePrivateKey()
-	require.NoError(t, err)
-	responderStaticPrivate, err := GeneratePrivateKey()
-	require.NoError(t, err)
-	responderStaticPublic, err := responderStaticPrivate.PublicKey()
-	require.NoError(t, err)
-
-	initiation, _, _, err := CreateInitiation(initiatorStaticPrivate, responderStaticPublic)
-	require.NoError(t, err)
-	_, initiatorStaticPublic, _, stateAfterInitiation, err := ConsumeInitiation(
-		responderStaticPrivate,
-		initiation.MarshalBinary(),
-	)
-	require.NoError(t, err)
-
-	want, _, err := CreateResponse(initiatorStaticPublic, initiation, stateAfterInitiation)
-	require.NoError(t, err)
-
-	got, _, err := ConsumeResponse(
-		initiatorStaticPrivate,
-		initiatorEphemeralPrivate,
-		want.MarshalBinary(),
-		HandshakeState{},
-	)
-
-	require.NoError(t, err)
-	require.Equal(t, want, got)
-}
-
 func TestConsumeResponseRejectsWrongMAC1(t *testing.T) {
 	initiatorStaticPrivate, err := GeneratePrivateKey()
 	require.NoError(t, err)
@@ -1108,7 +1076,7 @@ func TestConsumeResponseEphemeralMirrorsSetResponseEphemeral(t *testing.T) {
 	require.NotEqual(t, NewHandshakeState(responderStaticPublic), initiatorState)
 }
 
-func TestConsumeResponseReachesTheSameChainingKeyAsTheResponder(t *testing.T) {
+func TestCreateResponseAndConsumeResponseAgree(t *testing.T) {
 	initiatorStaticPrivate, err := GeneratePrivateKey()
 	require.NoError(t, err)
 	responderStaticPrivate, err := GeneratePrivateKey()
@@ -1122,36 +1090,69 @@ func TestConsumeResponseReachesTheSameChainingKeyAsTheResponder(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	_, initiatorStaticPublic, _, responderState, err := ConsumeInitiation(
+	_, initiatorStaticPublic, _, responderStateAfterInitiation, err := ConsumeInitiation(
 		responderStaticPrivate,
 		initiation.MarshalBinary(),
 	)
 	require.NoError(t, err)
 
-	// The responder side is played by hand so the test knows its ephemeral key
-	// and can stop right after both Diffie-Hellman exchanges.
-	var message HandshakeResponse
-	message.ReceiverIndex = initiation.SenderIndex
-	responderEphemeralPrivate, err := responderState.setResponseEphemeral(&message)
-	require.NoError(t, err)
-	require.NoError(t, responderState.mixResponseEphemeralSharedSecret(
-		responderEphemeralPrivate,
-		PublicKey(initiation.UnencryptedEphemeral),
-	))
-	require.NoError(t, responderState.mixResponseStaticSharedSecret(
-		responderEphemeralPrivate,
+	response, responderState, err := CreateResponse(
 		initiatorStaticPublic,
-	))
-	setResponseMAC1(&message, initiatorStaticPublic)
-	setResponseMAC2(&message)
+		initiation,
+		responderStateAfterInitiation,
+	)
+	require.NoError(t, err)
 
-	_, initiatorState, err := ConsumeResponse(
+	got, initiatorState, err := ConsumeResponse(
 		initiatorStaticPrivate,
 		initiatorEphemeralPrivate,
-		message.MarshalBinary(),
+		response.MarshalBinary(),
 		stateAfterInitiation,
 	)
 
 	require.NoError(t, err)
-	require.Equal(t, responderState.ChainingKey, initiatorState.ChainingKey)
+	require.Equal(t, response, got)
+	require.Equal(t, responderState, initiatorState)
+}
+
+func TestConsumeResponseRejectsATamperedTagOverAValidMAC1(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
+
+	initiation, initiatorEphemeralPrivate, stateAfterInitiation, err := CreateInitiation(
+		initiatorStaticPrivate,
+		responderStaticPublic,
+	)
+	require.NoError(t, err)
+
+	_, initiatorStaticPublic, _, responderStateAfterInitiation, err := ConsumeInitiation(
+		responderStaticPrivate,
+		initiation.MarshalBinary(),
+	)
+	require.NoError(t, err)
+
+	response, _, err := CreateResponse(
+		initiatorStaticPublic,
+		initiation,
+		responderStateAfterInitiation,
+	)
+	require.NoError(t, err)
+
+	// MAC1 is recomputed after the change, so the message survives the cheap
+	// check and only the tag can still tell that it was touched.
+	response.EncryptedNothing[0] ^= 1
+	setResponseMAC1(&response, initiatorStaticPublic)
+
+	_, _, err = ConsumeResponse(
+		initiatorStaticPrivate,
+		initiatorEphemeralPrivate,
+		response.MarshalBinary(),
+		stateAfterInitiation,
+	)
+
+	require.Error(t, err)
 }
