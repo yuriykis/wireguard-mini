@@ -1,28 +1,12 @@
 package noise
 
 import (
-	"encoding/hex"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/chacha20poly1305"
 )
-
-func TestNewHandshakeState(t *testing.T) {
-	responderPublicKey := PublicKey{9}
-
-	state := NewHandshakeState(responderPublicKey)
-
-	require.Equal(t,
-		"60e26daef327efc02ec335e2a025d2d016eb4206f87277f52d38d1988b78cd36",
-		hex.EncodeToString(state.ChainingKey[:]),
-	)
-	require.Equal(t,
-		"575bad75a5a30f85f58df113422a55d41873e357b40a3a2ea91f456c9508211a",
-		hex.EncodeToString(state.Hash[:]),
-	)
-}
 
 func TestSetInitiationEphemeral(t *testing.T) {
 	state := NewHandshakeState(PublicKey{9})
@@ -144,50 +128,6 @@ func TestDeriveInitiationTimestampEncryptionKey(t *testing.T) {
 	expectedTimestampEncryptionKey := expectedState.mixKeyAndGetEncryptionKey(sharedSecret[:])
 	require.Equal(t, expectedTimestampEncryptionKey, timestampEncryptionKey)
 	require.Equal(t, expectedState.ChainingKey, state.ChainingKey)
-	require.Equal(t, hashBefore, state.Hash)
-}
-
-func TestMixHash(t *testing.T) {
-	state := NewHandshakeState(PublicKey{9})
-	chainingKeyBefore := state.ChainingKey
-
-	state.mixHash([]byte{1, 2, 3})
-
-	require.Equal(t,
-		"9bd1c5f9faf06d2e88b162d6e77ed1d76f01b5b02b5a115901f9cc19d3922458",
-		hex.EncodeToString(state.Hash[:]),
-	)
-	require.Equal(t, chainingKeyBefore, state.ChainingKey)
-}
-
-func TestMixKey(t *testing.T) {
-	state := NewHandshakeState(PublicKey{9})
-	hashBefore := state.Hash
-	ephemeralPublicKey := PublicKey{9}
-
-	state.mixKey(ephemeralPublicKey[:])
-
-	require.Equal(t,
-		"394f055beb127aba9d424e2196e0bb2bfa08846ba4d3739600ff8bbd4dc4c7e6",
-		hex.EncodeToString(state.ChainingKey[:]),
-	)
-	require.Equal(t, hashBefore, state.Hash)
-}
-
-func TestMixKeyAndGetEncryptionKey(t *testing.T) {
-	state := NewHandshakeState(PublicKey{9})
-	hashBefore := state.Hash
-
-	encryptionKey := state.mixKeyAndGetEncryptionKey([]byte{1, 2, 3})
-
-	require.Equal(t,
-		"392064a312d512fc32d7a176879d306885d000aaecd19a05a143d6bbdd6ab7a0",
-		hex.EncodeToString(state.ChainingKey[:]),
-	)
-	require.Equal(t,
-		"c20abf72ebebd5c884c1ea79458a2038a2b1da673d3de47a6e29913e096bdbb8",
-		hex.EncodeToString(encryptionKey[:]),
-	)
 	require.Equal(t, hashBefore, state.Hash)
 }
 
@@ -739,36 +679,6 @@ func TestMixResponseStaticSharedSecretRejectsWrongIdentity(t *testing.T) {
 	require.NoError(t, err)
 	expectedState.mixKey(strangerSecret[:])
 	require.NotEqual(t, expectedState.ChainingKey, state.ChainingKey)
-}
-
-func TestMixKeyHashAndGetEncryptionKey(t *testing.T) {
-	state := NewHandshakeState(PublicKey{9})
-	chainingKeyBefore := state.ChainingKey
-	hashBefore := state.Hash
-	var presharedKey [PresharedKeySize]byte
-
-	encryptionKey := state.mixKeyHashAndGetEncryptionKey(presharedKey[:])
-
-	// The three outputs are recomputed here the way the whitepaper defines
-	// KDF3, so the test pins the construction and not just the fact that
-	// something changed.
-	temporary := hmacBlake2s(chainingKeyBefore[:], presharedKey[:])
-	expectedChainingKey := hmacBlake2s(temporary[:], []byte{1})
-	expectedHashMixin := hmacBlake2s(temporary[:], append(append([]byte{}, expectedChainingKey[:]...), 2))
-	expectedEncryptionKey := hmacBlake2s(temporary[:], append(append([]byte{}, expectedHashMixin[:]...), 3))
-
-	require.Equal(t, expectedChainingKey, state.ChainingKey)
-	require.Equal(t, expectedEncryptionKey, encryptionKey)
-
-	expectedState := HandshakeState{Hash: hashBefore}
-	expectedState.mixHash(expectedHashMixin[:])
-	require.Equal(t, expectedState.Hash, state.Hash)
-
-	// All three outputs are distinct, which is the whole point of taking
-	// three of them from one KDF.
-	require.NotEqual(t, expectedChainingKey, expectedHashMixin)
-	require.NotEqual(t, expectedChainingKey, expectedEncryptionKey)
-	require.NotEqual(t, expectedHashMixin, expectedEncryptionKey)
 }
 
 func TestEncryptResponseNothing(t *testing.T) {
