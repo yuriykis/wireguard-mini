@@ -133,3 +133,12 @@ func withByte(data []byte, index int, value byte) []byte {
 	result[index] = value
 	return result
 }
+
+func TestGenerateSenderIndexIsRandom(t *testing.T) {
+	first, err := generateSenderIndex()
+	require.NoError(t, err)
+	second, err := generateSenderIndex()
+	require.NoError(t, err)
+
+	require.NotEqual(t, first, second)
+}

@@ -1,6 +1,7 @@
 package noise
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -118,4 +119,13 @@ func ParseHandshakeInitiation(data []byte) (HandshakeInitiation, error) {
 	copy(message.MAC1[:], data[mac1Offset:mac2Offset])
 	copy(message.MAC2[:], data[mac2Offset:])
 	return message, nil
+}
+
+func generateSenderIndex() (uint32, error) {
+	var indexBytes [4]byte
+	if _, err := rand.Read(indexBytes[:]); err != nil {
+		return 0, fmt.Errorf("generate sender index: %w", err)
+	}
+
+	return binary.LittleEndian.Uint32(indexBytes[:]), nil
 }
