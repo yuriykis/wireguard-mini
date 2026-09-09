@@ -362,7 +362,10 @@ func TestCreateResponseAndConsumeResponseAgree(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, response, got)
-	require.Equal(t, responderState, initiatorState)
+	require.Equal(t, responderState.Hash, initiatorState.Hash)
+	require.Equal(t, responderState.ChainingKey, initiatorState.ChainingKey)
+	require.True(t, initiatorState.IsInitiator)
+	require.False(t, responderState.IsInitiator)
 }
 
 func TestConsumeResponseRejectsATamperedTagOverAValidMAC1(t *testing.T) {

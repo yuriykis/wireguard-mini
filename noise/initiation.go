@@ -19,6 +19,7 @@ func CreateInitiation(
 	}
 
 	state := NewHandshakeState(responderStaticPublic)
+	state.IsInitiator = true
 	var message HandshakeInitiation
 
 	message.SenderIndex, err = generateSenderIndex()
@@ -256,6 +257,7 @@ func ConsumeInitiation(
 	}
 
 	state := NewHandshakeState(responderStaticPublic)
+	state.IsInitiator = false
 	state.consumeInitiationEphemeral(message)
 
 	staticDecryptionKey, err := state.consumeInitiationStaticDecryptionKey(responderStaticPrivate, message)

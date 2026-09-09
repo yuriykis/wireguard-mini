@@ -215,7 +215,8 @@ func TestCreateInitiationIsReadableByTheResponder(t *testing.T) {
 
 	require.GreaterOrEqual(t, string(decryptedTimestamp), string(before[:]))
 	require.LessOrEqual(t, string(decryptedTimestamp), string(after[:]))
-	require.Equal(t, initiatorState, state)
+	require.Equal(t, initiatorState.Hash, state.Hash)
+	require.Equal(t, initiatorState.ChainingKey, state.ChainingKey)
 }
 
 func decryptForTest(t *testing.T, key [HashSize]byte, ciphertext, additionalData []byte) []byte {
@@ -566,5 +567,8 @@ func TestCreateInitiationAndConsumeInitiationAgree(t *testing.T) {
 
 	// Both sides end the first message with an identical transcript. This is
 	// what the handshake response will be built on.
-	require.Equal(t, initiatorState, responderState)
+	require.Equal(t, initiatorState.Hash, responderState.Hash)
+	require.Equal(t, initiatorState.ChainingKey, responderState.ChainingKey)
+	require.True(t, initiatorState.IsInitiator)
+	require.False(t, responderState.IsInitiator)
 }
