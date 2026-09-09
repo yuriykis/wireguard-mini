@@ -20,6 +20,7 @@ const (
 type HandshakeState struct {
 	Hash        [HashSize]byte
 	ChainingKey [ChainingKeySize]byte
+	IsInitiator bool
 }
 
 // NewHandshakeState initializes the Noise state bound to the responder's identity.
