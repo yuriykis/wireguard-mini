@@ -11,6 +11,17 @@ func (state *HandshakeState) DeriveTransportKeys() TransportKeys {
 	// TODO: run the KDF over the chaining key with an empty input
 	// TODO: take the first output as one key and the second as the other
 	// TODO: assign send/receive by state.IsInitiator - the initiator's send is the responder's receive
-	// TODO: zero the chaining key, it must not outlive the handshake
+	clear(state.ChainingKey[:])
 	return TransportKeys{}
+}
+
+func kdf2(key, input []byte) (first, second [HashSize]byte) {
+	temporary := hmacBlake2s(key, input)
+	first = hmacBlake2s(temporary[:], []byte{1})
+
+	secondInput := make([]byte, 0, len(first)+1)
+	secondInput = append(secondInput, first[:]...)
+	secondInput = append(secondInput, 2)
+	second = hmacBlake2s(temporary[:], secondInput)
+	return first, second
 }
