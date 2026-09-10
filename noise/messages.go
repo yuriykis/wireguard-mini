@@ -27,6 +27,14 @@ const (
 	responseEncryptedNothingOffset = 44
 	responseMAC1Offset             = 60
 	responseMAC2Offset             = 76
+
+	TransportDataMinSize = 32
+
+	transportDataType byte = 4
+
+	transportReceiverIndexOffset   = 4
+	transportCounterOffset         = 8
+	transportEncryptedPacketOffset = 16
 )
 
 // HandshakeInitiation contains the fields carried by WireGuard's first handshake message.
@@ -118,6 +126,34 @@ func ParseHandshakeInitiation(data []byte) (HandshakeInitiation, error) {
 	copy(message.EncryptedTimestamp[:], data[encryptedTimestampOffset:mac1Offset])
 	copy(message.MAC1[:], data[mac1Offset:mac2Offset])
 	copy(message.MAC2[:], data[mac2Offset:])
+	return message, nil
+}
+
+// TransportData contains the fields carried by WireGuard's transport data message.
+type TransportData struct {
+	ReceiverIndex   uint32
+	Counter         uint64
+	EncryptedPacket []byte
+}
+
+// MarshalBinary encodes a transport data message in WireGuard's wire format.
+func (m TransportData) MarshalBinary() []byte {
+	// allocate the 16-byte header plus the encrypted packet
+	// write the type, leave the three reserved bytes zero
+	// write the receiver index, little-endian
+	// write the counter, little-endian
+	// copy the encrypted packet after the header
+	return nil
+}
+
+// ParseTransportData decodes a WireGuard transport data message.
+func ParseTransportData(data []byte) (TransportData, error) {
+	var message TransportData
+	// reject anything shorter than the header plus a 16-byte tag, even an empty packet carries the tag
+	// reject a wrong type
+	// reject nonzero reserved bytes
+	// read the receiver index and the counter
+	// copy the encrypted packet out, because the UDP read buffer is reused for the next datagram
 	return message, nil
 }
 
