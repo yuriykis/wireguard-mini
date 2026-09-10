@@ -6,6 +6,62 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestDeriveTransportKeysAssignsRolesByInitiator(t *testing.T) {
+	state := NewHandshakeState(PublicKey{9})
+	first, second := kdf2(state.ChainingKey[:], nil)
+
+	initiator := state
+	initiator.IsInitiator = true
+	responder := state
+	responder.IsInitiator = false
+
+	require.Equal(t, TransportKeys{Send: first, Receive: second}, initiator.DeriveTransportKeys())
+	require.Equal(t, TransportKeys{Send: second, Receive: first}, responder.DeriveTransportKeys())
+}
+
+func TestDeriveTransportKeysPairUpAfterAFullHandshake(t *testing.T) {
+	initiatorStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPrivate, err := GeneratePrivateKey()
+	require.NoError(t, err)
+	responderStaticPublic, err := responderStaticPrivate.PublicKey()
+	require.NoError(t, err)
+
+	initiation, initiatorEphemeralPrivate, initiatorStateAfterInitiation, err := CreateInitiation(
+		initiatorStaticPrivate,
+		responderStaticPublic,
+	)
+	require.NoError(t, err)
+
+	_, initiatorStaticPublic, _, responderStateAfterInitiation, err := ConsumeInitiation(
+		responderStaticPrivate,
+		initiation.MarshalBinary(),
+	)
+	require.NoError(t, err)
+
+	response, responderState, err := CreateResponse(
+		initiatorStaticPublic,
+		initiation,
+		responderStateAfterInitiation,
+	)
+	require.NoError(t, err)
+
+	_, initiatorState, err := ConsumeResponse(
+		initiatorStaticPrivate,
+		initiatorEphemeralPrivate,
+		response.MarshalBinary(),
+		initiatorStateAfterInitiation,
+	)
+	require.NoError(t, err)
+
+	initiatorKeys := initiatorState.DeriveTransportKeys()
+	responderKeys := responderState.DeriveTransportKeys()
+
+	require.Equal(t, initiatorKeys.Send, responderKeys.Receive)
+	require.Equal(t, initiatorKeys.Receive, responderKeys.Send)
+	require.NotEqual(t, initiatorKeys.Send, initiatorKeys.Receive)
+}
+
 func TestKDF2(t *testing.T) {
 	state := NewHandshakeState(PublicKey{9})
 

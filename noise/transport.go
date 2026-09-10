@@ -8,11 +8,12 @@ type TransportKeys struct {
 
 // DeriveTransportKeys turns the final chaining key into the pair of session keys.
 func (state *HandshakeState) DeriveTransportKeys() TransportKeys {
-	// TODO: run the KDF over the chaining key with an empty input
-	// TODO: take the first output as one key and the second as the other
-	// TODO: assign send/receive by state.IsInitiator - the initiator's send is the responder's receive
+	first, second := kdf2(state.ChainingKey[:], nil)
 	clear(state.ChainingKey[:])
-	return TransportKeys{}
+	if state.IsInitiator {
+		return TransportKeys{Send: first, Receive: second}
+	}
+	return TransportKeys{Send: second, Receive: first}
 }
 
 func kdf2(key, input []byte) (first, second [HashSize]byte) {
