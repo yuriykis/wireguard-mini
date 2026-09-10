@@ -17,6 +17,8 @@ func TestDeriveTransportKeysAssignsRolesByInitiator(t *testing.T) {
 
 	require.Equal(t, TransportKeys{Send: first, Receive: second}, initiator.DeriveTransportKeys())
 	require.Equal(t, TransportKeys{Send: second, Receive: first}, responder.DeriveTransportKeys())
+	require.Equal(t, [ChainingKeySize]byte{}, initiator.ChainingKey)
+	require.Equal(t, [ChainingKeySize]byte{}, responder.ChainingKey)
 }
 
 func TestDeriveTransportKeysPairUpAfterAFullHandshake(t *testing.T) {
