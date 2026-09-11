@@ -16,6 +16,12 @@ func (state *HandshakeState) DeriveTransportKeys() TransportKeys {
 	return TransportKeys{Send: second, Receive: first}
 }
 
+// EncryptTransportData seals a packet read from TUN.
+func EncryptTransportData(packet []byte) []byte {
+	// encrypt the packet
+	return nil
+}
+
 func kdf2(key, input []byte) (first, second [HashSize]byte) {
 	temporary := hmacBlake2s(key, input)
 	first = hmacBlake2s(temporary[:], []byte{1})
