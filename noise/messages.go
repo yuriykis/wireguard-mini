@@ -138,12 +138,12 @@ type TransportData struct {
 
 // MarshalBinary encodes a transport data message in WireGuard's wire format.
 func (m TransportData) MarshalBinary() []byte {
-	// allocate the 16-byte header plus the encrypted packet
-	// write the type, leave the three reserved bytes zero
-	// write the receiver index, little-endian
-	// write the counter, little-endian
-	// copy the encrypted packet after the header
-	return nil
+	data := make([]byte, transportEncryptedPacketOffset+len(m.EncryptedPacket))
+	data[0] = transportDataType
+	binary.LittleEndian.PutUint32(data[transportReceiverIndexOffset:transportCounterOffset], m.ReceiverIndex)
+	binary.LittleEndian.PutUint64(data[transportCounterOffset:transportEncryptedPacketOffset], m.Counter)
+	copy(data[transportEncryptedPacketOffset:], m.EncryptedPacket)
+	return data
 }
 
 // ParseTransportData decodes a WireGuard transport data message.

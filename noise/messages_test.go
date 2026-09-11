@@ -100,6 +100,19 @@ func TestParseHandshakeInitiationRejectsInvalidMessage(t *testing.T) {
 	}
 }
 
+func TestTransportDataMarshalBinary(t *testing.T) {
+	message := testTransportData()
+
+	data := message.MarshalBinary()
+
+	require.Len(t, data, 16+len(message.EncryptedPacket))
+	require.Equal(t, byte(4), data[0])
+	require.Equal(t, []byte{0, 0, 0}, data[1:4])
+	require.Equal(t, []byte{0x04, 0x03, 0x02, 0x01}, data[4:8])
+	require.Equal(t, []byte{0x10, 0x0f, 0x0e, 0x0d, 0x0c, 0x0b, 0x0a, 0x09}, data[8:16])
+	require.Equal(t, message.EncryptedPacket, data[16:])
+}
+
 func testHandshakeInitiation() HandshakeInitiation {
 	var message HandshakeInitiation
 	message.SenderIndex = 0x01020304
@@ -119,6 +132,16 @@ func testHandshakeResponse() HandshakeResponse {
 	fill(message.EncryptedNothing[:], 0x40)
 	fill(message.MAC1[:], 0x60)
 	fill(message.MAC2[:], 0x70)
+	return message
+}
+
+func testTransportData() TransportData {
+	message := TransportData{
+		ReceiverIndex:   0x01020304,
+		Counter:         0x090a0b0c0d0e0f10,
+		EncryptedPacket: make([]byte, 20),
+	}
+	fill(message.EncryptedPacket, 0x40)
 	return message
 }
 
