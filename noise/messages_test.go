@@ -113,6 +113,56 @@ func TestTransportDataMarshalBinary(t *testing.T) {
 	require.Equal(t, message.EncryptedPacket, data[16:])
 }
 
+func TestTransportDataRoundTrip(t *testing.T) {
+	want := testTransportData()
+
+	got, err := ParseTransportData(want.MarshalBinary())
+
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestParseTransportDataAcceptsEmptyPacket(t *testing.T) {
+	want := TransportData{ReceiverIndex: 1, Counter: 2, EncryptedPacket: make([]byte, 16)}
+
+	got, err := ParseTransportData(want.MarshalBinary())
+
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestParseTransportDataCopiesEncryptedPacket(t *testing.T) {
+	want := testTransportData()
+	data := want.MarshalBinary()
+
+	got, err := ParseTransportData(data)
+	require.NoError(t, err)
+	fill(data, 0xff)
+
+	require.Equal(t, want.EncryptedPacket, got.EncryptedPacket)
+}
+
+func TestParseTransportDataRejectsInvalidMessage(t *testing.T) {
+	valid := testTransportData().MarshalBinary()
+
+	tests := []struct {
+		name    string
+		data    []byte
+		wantErr string
+	}{
+		{name: "too short", data: valid[:TransportDataMinSize-1], wantErr: "invalid transport data length"},
+		{name: "wrong type", data: withByte(valid, 0, 1), wantErr: "invalid transport data type"},
+		{name: "non-zero reserved byte", data: withByte(valid, 2, 1), wantErr: "reserved bytes must be zero"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseTransportData(tt.data)
+			require.ErrorContains(t, err, tt.wantErr)
+		})
+	}
+}
+
 func testHandshakeInitiation() HandshakeInitiation {
 	var message HandshakeInitiation
 	message.SenderIndex = 0x01020304

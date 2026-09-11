@@ -149,11 +149,22 @@ func (m TransportData) MarshalBinary() []byte {
 // ParseTransportData decodes a WireGuard transport data message.
 func ParseTransportData(data []byte) (TransportData, error) {
 	var message TransportData
-	// reject anything shorter than the header plus a 16-byte tag, even an empty packet carries the tag
-	// reject a wrong type
-	// reject nonzero reserved bytes
-	// read the receiver index and the counter
-	// copy the encrypted packet out, because the UDP read buffer is reused for the next datagram
+
+	// Even an empty packet carries the 16-byte authentication tag.
+	if len(data) < TransportDataMinSize {
+		return message, fmt.Errorf("invalid transport data length: got %d, want at least %d", len(data), TransportDataMinSize)
+	}
+	if data[0] != transportDataType {
+		return message, fmt.Errorf("invalid transport data type: got %d, want %d", data[0], transportDataType)
+	}
+	if data[1] != 0 || data[2] != 0 || data[3] != 0 {
+		return message, errors.New("transport data reserved bytes must be zero")
+	}
+
+	message.ReceiverIndex = binary.LittleEndian.Uint32(data[transportReceiverIndexOffset:transportCounterOffset])
+	message.Counter = binary.LittleEndian.Uint64(data[transportCounterOffset:transportEncryptedPacketOffset])
+	// The UDP read buffer is reused for the next datagram.
+	message.EncryptedPacket = append([]byte(nil), data[transportEncryptedPacketOffset:]...)
 	return message, nil
 }
 
