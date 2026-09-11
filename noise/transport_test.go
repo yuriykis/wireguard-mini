@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
 func TestDeriveTransportKeysAssignsRolesByInitiator(t *testing.T) {
@@ -62,6 +63,24 @@ func TestDeriveTransportKeysPairUpAfterAFullHandshake(t *testing.T) {
 	require.Equal(t, initiatorKeys.Send, responderKeys.Receive)
 	require.Equal(t, initiatorKeys.Receive, responderKeys.Send)
 	require.NotEqual(t, initiatorKeys.Send, initiatorKeys.Receive)
+}
+
+func TestEncryptTransportDataCanBeDecryptedWithSendKey(t *testing.T) {
+	sendKey := [HashSize]byte{7}
+	packet := []byte("ping packet")
+
+	encrypted, err := EncryptTransportData(sendKey, packet)
+	require.NoError(t, err)
+
+	require.Len(t, encrypted, len(packet)+chacha20poly1305.Overhead)
+	require.NotContains(t, string(encrypted), string(packet))
+
+	aead, err := chacha20poly1305.New(sendKey[:])
+	require.NoError(t, err)
+	var nonce [chacha20poly1305.NonceSize]byte
+	decrypted, err := aead.Open(nil, nonce[:], encrypted, nil)
+	require.NoError(t, err)
+	require.Equal(t, packet, decrypted)
 }
 
 func TestKDF2(t *testing.T) {

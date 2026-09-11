@@ -1,5 +1,7 @@
 package noise
 
+import "golang.org/x/crypto/chacha20poly1305"
+
 // TransportKeys holds the two session keys a peer uses after the handshake.
 type TransportKeys struct {
 	Send    [HashSize]byte
@@ -17,9 +19,15 @@ func (state *HandshakeState) DeriveTransportKeys() TransportKeys {
 }
 
 // EncryptTransportData seals a packet read from TUN.
-func EncryptTransportData(packet []byte) []byte {
-	// encrypt the packet
-	return nil
+func EncryptTransportData(sendKey [HashSize]byte, packet []byte) ([]byte, error) {
+	aead, err := chacha20poly1305.New(sendKey[:])
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: a nonce that differs for every packet
+	var nonce [chacha20poly1305.NonceSize]byte
+	return aead.Seal(nil, nonce[:], packet, nil), nil
 }
 
 func kdf2(key, input []byte) (first, second [HashSize]byte) {
