@@ -1,6 +1,7 @@
 package noise
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -69,7 +70,7 @@ func TestEncryptTransportDataCanBeDecryptedWithSendKey(t *testing.T) {
 	sendKey := [HashSize]byte{7}
 	packet := []byte("ping packet")
 
-	encrypted, err := EncryptTransportData(sendKey, packet)
+	encrypted, err := EncryptTransportData(sendKey, 42, packet)
 	require.NoError(t, err)
 
 	require.Len(t, encrypted, len(packet)+chacha20poly1305.Overhead)
@@ -78,9 +79,36 @@ func TestEncryptTransportDataCanBeDecryptedWithSendKey(t *testing.T) {
 	aead, err := chacha20poly1305.New(sendKey[:])
 	require.NoError(t, err)
 	var nonce [chacha20poly1305.NonceSize]byte
+	binary.LittleEndian.PutUint64(nonce[4:], 42)
 	decrypted, err := aead.Open(nil, nonce[:], encrypted, nil)
 	require.NoError(t, err)
 	require.Equal(t, packet, decrypted)
+}
+
+func TestEncryptTransportDataDiffersPerCounter(t *testing.T) {
+	sendKey := [HashSize]byte{7}
+	packet := []byte("ping packet")
+
+	first, err := EncryptTransportData(sendKey, 1, packet)
+	require.NoError(t, err)
+	second, err := EncryptTransportData(sendKey, 2, packet)
+	require.NoError(t, err)
+
+	require.NotEqual(t, first, second)
+}
+
+func TestEncryptTransportDataCannotBeDecryptedWithAnotherCounter(t *testing.T) {
+	sendKey := [HashSize]byte{7}
+
+	encrypted, err := EncryptTransportData(sendKey, 1, []byte("ping packet"))
+	require.NoError(t, err)
+
+	aead, err := chacha20poly1305.New(sendKey[:])
+	require.NoError(t, err)
+	var nonce [chacha20poly1305.NonceSize]byte
+	binary.LittleEndian.PutUint64(nonce[4:], 2)
+	_, err = aead.Open(nil, nonce[:], encrypted, nil)
+	require.Error(t, err)
 }
 
 func TestKDF2(t *testing.T) {
