@@ -146,3 +146,44 @@ func TestKDF2MatchesMixKeyAndGetEncryptionKey(t *testing.T) {
 	require.Equal(t, state.ChainingKey, first)
 	require.Equal(t, encryptionKey, second)
 }
+
+func TestEncryptAndDecryptTransportDataAgree(t *testing.T) {
+	key := [HashSize]byte{7}
+	packet := []byte("ping packet")
+
+	encrypted, err := EncryptTransportData(key, 42, packet)
+	require.NoError(t, err)
+
+	decrypted, err := DecryptTransportData(key, 42, encrypted)
+	require.NoError(t, err)
+	require.Equal(t, packet, decrypted)
+}
+
+func TestDecryptTransportDataRejectsAnotherCounter(t *testing.T) {
+	key := [HashSize]byte{7}
+
+	encrypted, err := EncryptTransportData(key, 1, []byte("ping packet"))
+	require.NoError(t, err)
+
+	_, err = DecryptTransportData(key, 2, encrypted)
+	require.Error(t, err)
+}
+
+func TestDecryptTransportDataRejectsAnotherKey(t *testing.T) {
+	encrypted, err := EncryptTransportData([HashSize]byte{7}, 1, []byte("ping packet"))
+	require.NoError(t, err)
+
+	_, err = DecryptTransportData([HashSize]byte{8}, 1, encrypted)
+	require.Error(t, err)
+}
+
+func TestDecryptTransportDataRejectsModifiedPacket(t *testing.T) {
+	key := [HashSize]byte{7}
+
+	encrypted, err := EncryptTransportData(key, 1, []byte("ping packet"))
+	require.NoError(t, err)
+	encrypted[0] ^= 1
+
+	_, err = DecryptTransportData(key, 1, encrypted)
+	require.Error(t, err)
+}

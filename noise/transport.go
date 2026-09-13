@@ -44,3 +44,15 @@ func kdf2(key, input []byte) (first, second [HashSize]byte) {
 	second = hmacBlake2s(temporary[:], secondInput)
 	return first, second
 }
+
+// DecryptTransportData opens a packet received from a peer under the given counter.
+func DecryptTransportData(receiveKey [HashSize]byte, counter uint64, encryptedPacket []byte) ([]byte, error) {
+	aead, err := chacha20poly1305.New(receiveKey[:])
+	if err != nil {
+		return nil, err
+	}
+
+	var nonce [chacha20poly1305.NonceSize]byte
+	binary.LittleEndian.PutUint64(nonce[4:], counter)
+	return aead.Open(nil, nonce[:], encryptedPacket, nil)
+}
