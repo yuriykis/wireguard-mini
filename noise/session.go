@@ -8,3 +8,8 @@ type Session struct {
 	sendCounter uint64
 	replay      ReplayWindow
 }
+
+// Seal encrypts a packet read from TUN with the session's send key.
+func (session *Session) Seal(packet []byte) ([]byte, error) {
+	return EncryptTransportData(session.Keys.Send, session.sendCounter, packet)
+}
