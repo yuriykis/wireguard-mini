@@ -11,5 +11,7 @@ type Session struct {
 
 // Seal encrypts a packet read from TUN with the session's send key.
 func (session *Session) Seal(packet []byte) ([]byte, error) {
-	return EncryptTransportData(session.Keys.Send, session.sendCounter, packet)
+	encrypted, err := EncryptTransportData(session.Keys.Send, session.sendCounter, packet)
+	session.sendCounter++
+	return encrypted, err
 }
