@@ -9,9 +9,14 @@ type Session struct {
 	replay      ReplayWindow
 }
 
-// Seal encrypts a packet read from TUN with the session's send key.
+// Seal encrypts a packet read from TUN into a transport data message.
 func (session *Session) Seal(packet []byte) ([]byte, error) {
-	encrypted, err := EncryptTransportData(session.Keys.Send, session.sendCounter, packet)
+	counter := session.sendCounter
 	session.sendCounter++
-	return encrypted, err
+
+	encrypted, err := EncryptTransportData(session.Keys.Send, counter, packet)
+	if err != nil {
+		return nil, err
+	}
+	return TransportData{Counter: counter, EncryptedPacket: encrypted}.MarshalBinary(), nil
 }
