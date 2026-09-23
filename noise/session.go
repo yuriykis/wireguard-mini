@@ -1,5 +1,7 @@
 package noise
 
+import "errors"
+
 // Session holds everything one peer needs to exchange transport data after a handshake.
 type Session struct {
 	Keys        TransportKeys
@@ -31,5 +33,13 @@ func (session *Session) Open(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return DecryptTransportData(session.Keys.Receive, message.Counter, message.EncryptedPacket)
+
+	packet, err := DecryptTransportData(session.Keys.Receive, message.Counter, message.EncryptedPacket)
+	if err != nil {
+		return nil, err
+	}
+	if !session.replay.CheckCounter(message.Counter) {
+		return nil, errors.New("transport data counter already used or too old")
+	}
+	return packet, nil
 }
