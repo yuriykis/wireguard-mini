@@ -18,5 +18,9 @@ func (session *Session) Seal(packet []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return TransportData{Counter: counter, EncryptedPacket: encrypted}.MarshalBinary(), nil
+	return TransportData{
+		ReceiverIndex:   session.RemoteIndex,
+		Counter:         counter,
+		EncryptedPacket: encrypted,
+	}.MarshalBinary(), nil
 }
