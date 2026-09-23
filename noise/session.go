@@ -24,3 +24,12 @@ func (session *Session) Seal(packet []byte) ([]byte, error) {
 		EncryptedPacket: encrypted,
 	}.MarshalBinary(), nil
 }
+
+// Open decrypts a transport data message received from UDP into a packet for TUN.
+func (session *Session) Open(data []byte) ([]byte, error) {
+	message, err := ParseTransportData(data)
+	if err != nil {
+		return nil, err
+	}
+	return DecryptTransportData(session.Keys.Receive, message.Counter, message.EncryptedPacket)
+}
