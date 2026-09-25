@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 
+	"wireguard-mini/noise"
 	"wireguard-mini/tun"
 )
 
@@ -55,12 +56,12 @@ func main() {
 	}()
 	log.Printf("UDP listening on %s, peer %s", udpConn.LocalAddr(), peerAddr)
 
-	file, err := tun.Open("tun0")
+	tunFile, err := tun.Open("tun0")
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer func() {
-		if err := file.Close(); err != nil {
+		if err := tunFile.Close(); err != nil {
 			log.Printf("could not close tun0: %v", err)
 		}
 	}()
@@ -77,12 +78,19 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Print("tun0 is up")
-	go receiveUDPPackets(udpConn, file)
+	session := noise.Session{
+		Keys: noise.TransportKeys{
+			Send:    [noise.HashSize]byte{1},
+			Receive: [noise.HashSize]byte{1},
+		},
+	}
+
+	go receiveUDPPackets(udpConn, tunFile, &session)
 
 	buf := make([]byte, 65535)
 
 	for {
-		n, err := file.Read(buf)
+		n, err := tunFile.Read(buf)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -104,12 +112,18 @@ func main() {
 			packet.destination,
 		)
 
-		written, err := udpConn.WriteToUDP(buf[:n], peerAddr)
+		sealed, err := session.Seal(buf[:n])
+		if err != nil {
+			log.Printf("could not seal packet: %v", err)
+			continue
+		}
+
+		written, err := udpConn.WriteToUDP(sealed, peerAddr)
 		if err != nil {
 			log.Printf("could not send packet to peer: %v", err)
 			continue
 		}
-		if written != n {
+		if written != len(sealed) {
 			log.Printf("could not send packet to peer: %v", io.ErrShortWrite)
 			continue
 		}
@@ -117,7 +131,7 @@ func main() {
 	}
 }
 
-func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File) {
+func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Session) {
 	buf := make([]byte, 65535)
 
 	for {
@@ -127,7 +141,13 @@ func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File) {
 			return
 		}
 
-		packet, err := parseIPv4Packet(buf[:n])
+		opened, err := session.Open(buf[:n])
+		if err != nil {
+			log.Printf("could not open packet from UDP peer %s: %v", source, err)
+			continue
+		}
+
+		packet, err := parseIPv4Packet(opened)
 		if err != nil {
 			log.Printf("invalid packet from UDP peer %s: %v", source, err)
 			continue
@@ -142,12 +162,12 @@ func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File) {
 			packet.destination,
 		)
 
-		written, err := tunFile.Write(buf[:n])
+		written, err := tunFile.Write(opened)
 		if err != nil {
 			log.Printf("could not write packet to TUN: %v", err)
 			continue
 		}
-		if written != n {
+		if written != len(opened) {
 			log.Printf("could not write packet to TUN: %v", io.ErrShortWrite)
 			continue
 		}
