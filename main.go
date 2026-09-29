@@ -15,6 +15,7 @@ func main() {
 	listenFlag := flag.String("listen", "", "local UDP address (for example 192.0.2.1:51820)")
 	peerFlag := flag.String("peer", "", "peer UDP endpoint (for example 192.0.2.2:51820)")
 	tunAddressFlag := flag.String("tun-address", "", "local TUN IPv4 address (for example 10.0.0.1/24)")
+	configFlag := flag.String("config", "", "JSON file with the role and keys (for example left.json)")
 	flag.Parse()
 
 	if *listenFlag == "" {
@@ -26,6 +27,15 @@ func main() {
 	if *tunAddressFlag == "" {
 		log.Fatal("-tun-address is required")
 	}
+	if *configFlag == "" {
+		log.Fatal("-config is required")
+	}
+
+	config, err := loadConfig(*configFlag)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("config loaded from %s, initiator=%t", *configFlag, config.Initiator)
 
 	tunIP, tunNetwork, err := net.ParseCIDR(*tunAddressFlag)
 	if err != nil {
