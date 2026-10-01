@@ -66,6 +66,18 @@ func main() {
 	}()
 	log.Printf("UDP listening on %s, peer %s", udpConn.LocalAddr(), peerAddr)
 
+	if config.Initiator {
+		initiation, _, _, err := noise.CreateInitiation(config.PrivateKey, config.PeerPublicKey)
+		if err != nil {
+			log.Fatalf("could not create handshake initiation: %v", err)
+		}
+		written, err := udpConn.WriteToUDP(initiation.MarshalBinary(), peerAddr)
+		if err != nil {
+			log.Fatalf("could not send handshake initiation: %v", err)
+		}
+		log.Printf("handshake initiation sent=%d peer=%s", written, peerAddr)
+	}
+
 	tunFile, err := tun.Open("tun0")
 	if err != nil {
 		log.Fatal(err)
