@@ -19,6 +19,18 @@ func Build() error {
 	return cmd.Run()
 }
 
+// BuildDebug compiles bin/wireguard-mini-debug without optimizations for dlv.
+func BuildDebug() error {
+	if err := os.MkdirAll("bin", 0o755); err != nil {
+		return err
+	}
+
+	cmd := exec.Command("go", "build", "-gcflags=all=-N -l", "-o", "bin/wireguard-mini-debug", ".")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // Test runs all Go tests.
 func Test() error {
 	cmd := exec.Command("go", "test", "./...")
