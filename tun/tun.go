@@ -40,7 +40,8 @@ type ifreqIPv4 struct {
 }
 
 func Open(name string) (*os.File, error) {
-	file, err := os.OpenFile("/dev/net/tun", os.O_RDWR, 0)
+	// os.OpenFile would register the fd with epoll before TUNSETIFF, when it still reports EPOLLERR.
+	fd, err := syscall.Open("/dev/net/tun", syscall.O_RDWR|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -51,15 +52,15 @@ func Open(name string) (*os.File, error) {
 
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
-		file.Fd(),
+		uintptr(fd),
 		tunsetiff,
 		uintptr(unsafe.Pointer(&req)),
 	)
 	if errno != 0 {
-		return nil, errors.Join(errno, file.Close())
+		return nil, errors.Join(errno, syscall.Close(fd))
 	}
 
-	return file, nil
+	return os.NewFile(uintptr(fd), "/dev/net/tun"), nil
 }
 
 func SetMTU(name string, mtu int) error {
