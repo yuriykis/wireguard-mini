@@ -11,7 +11,7 @@ const (
 	HandshakeInitiationSize = 148
 	HandshakeResponseSize   = 92
 
-	handshakeInitiationType byte = 1
+	HandshakeInitiationType byte = 1
 	handshakeResponseType   byte = 2
 
 	senderIndexOffset        = 4
@@ -96,7 +96,7 @@ func ParseHandshakeResponse(data []byte) (HandshakeResponse, error) {
 // MarshalBinary encodes a handshake initiation in WireGuard's 148-byte wire format.
 func (m HandshakeInitiation) MarshalBinary() []byte {
 	data := make([]byte, HandshakeInitiationSize)
-	data[0] = handshakeInitiationType
+	data[0] = HandshakeInitiationType
 	binary.LittleEndian.PutUint32(data[senderIndexOffset:ephemeralOffset], m.SenderIndex)
 	copy(data[ephemeralOffset:encryptedStaticOffset], m.UnencryptedEphemeral[:])
 	copy(data[encryptedStaticOffset:encryptedTimestampOffset], m.EncryptedStatic[:])
@@ -113,8 +113,8 @@ func ParseHandshakeInitiation(data []byte) (HandshakeInitiation, error) {
 	if len(data) != HandshakeInitiationSize {
 		return message, fmt.Errorf("invalid handshake initiation length: got %d, want %d", len(data), HandshakeInitiationSize)
 	}
-	if data[0] != handshakeInitiationType {
-		return message, fmt.Errorf("invalid handshake initiation type: got %d, want %d", data[0], handshakeInitiationType)
+	if data[0] != HandshakeInitiationType {
+		return message, fmt.Errorf("invalid handshake initiation type: got %d, want %d", data[0], HandshakeInitiationType)
 	}
 	if data[1] != 0 || data[2] != 0 || data[3] != 0 {
 		return message, errors.New("handshake initiation reserved bytes must be zero")

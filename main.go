@@ -163,6 +163,11 @@ func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Sessi
 			return
 		}
 
+		if buf[0] == noise.HandshakeInitiationType {
+			log.Printf("handshake initiation received=%d peer=%s", n, source)
+			continue
+		}
+
 		opened, err := session.Open(buf[:n])
 		if err != nil {
 			log.Printf("could not open packet from UDP peer %s: %v", source, err)
