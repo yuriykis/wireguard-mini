@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"io"
 	"log"
@@ -107,7 +108,7 @@ func main() {
 		},
 	}
 
-	go receiveUDPPackets(udpConn, tunFile, &session)
+	go receiveUDPPackets(udpConn, tunFile, &session, config.PrivateKey)
 
 	buf := make([]byte, 65535)
 
@@ -153,7 +154,7 @@ func main() {
 	}
 }
 
-func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Session) {
+func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Session, privateKey noise.PrivateKey) {
 	buf := make([]byte, 65535)
 
 	for {
@@ -165,6 +166,17 @@ func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Sessi
 
 		if buf[0] == noise.HandshakeInitiationType {
 			log.Printf("handshake initiation received=%d peer=%s", n, source)
+			response := handleHandshakeInitiation(buf[:n], source, privateKey)
+			if response == nil {
+				continue
+			}
+
+			written, err := conn.WriteToUDP(response, source)
+			if err != nil {
+				log.Printf("could not send handshake response to UDP peer %s: %v", source, err)
+				continue
+			}
+			log.Printf("handshake response sent=%d peer=%s", written, source)
 			continue
 		}
 
@@ -200,4 +212,25 @@ func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Sessi
 		}
 		log.Printf("written=%d to=tun0", written)
 	}
+}
+
+func handleHandshakeInitiation(buf []byte, source *net.UDPAddr, privateKey noise.PrivateKey) []byte {
+	initiation, initiatorPubKey, timestamp, state, err := noise.ConsumeInitiation(privateKey, buf)
+	if err != nil {
+		log.Printf("could not consume handshake initiation from UDP peer %s: %v", source, err)
+		return nil
+	}
+	log.Printf(
+		"handshake initiation consumed peer=%s initiatorPubKey=%s timestamp=%x",
+		source,
+		base64.StdEncoding.EncodeToString(initiatorPubKey[:]),
+		timestamp,
+	)
+
+	response, _, err := noise.CreateResponse(initiatorPubKey, initiation, state)
+	if err != nil {
+		log.Printf("could not create handshake response for UDP peer %s: %v", source, err)
+		return nil
+	}
+	return response.MarshalBinary()
 }
