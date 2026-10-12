@@ -12,7 +12,7 @@ const (
 	HandshakeResponseSize   = 92
 
 	HandshakeInitiationType byte = 1
-	handshakeResponseType   byte = 2
+	HandshakeResponseType   byte = 2
 
 	senderIndexOffset        = 4
 	ephemeralOffset          = 8
@@ -60,7 +60,7 @@ type HandshakeResponse struct {
 // MarshalBinary encodes a handshake response in WireGuard's 92-byte wire format.
 func (m HandshakeResponse) MarshalBinary() []byte {
 	data := make([]byte, HandshakeResponseSize)
-	data[0] = handshakeResponseType
+	data[0] = HandshakeResponseType
 	binary.LittleEndian.PutUint32(data[responseSenderIndexOffset:responseReceiverIndexOffset], m.SenderIndex)
 	binary.LittleEndian.PutUint32(data[responseReceiverIndexOffset:responseEphemeralOffset], m.ReceiverIndex)
 	copy(data[responseEphemeralOffset:responseEncryptedNothingOffset], m.UnencryptedEphemeral[:])
@@ -77,8 +77,8 @@ func ParseHandshakeResponse(data []byte) (HandshakeResponse, error) {
 	if len(data) != HandshakeResponseSize {
 		return message, fmt.Errorf("invalid handshake response length: got %d, want %d", len(data), HandshakeResponseSize)
 	}
-	if data[0] != handshakeResponseType {
-		return message, fmt.Errorf("invalid handshake response type: got %d, want %d", data[0], handshakeResponseType)
+	if data[0] != HandshakeResponseType {
+		return message, fmt.Errorf("invalid handshake response type: got %d, want %d", data[0], HandshakeResponseType)
 	}
 	if data[1] != 0 || data[2] != 0 || data[3] != 0 {
 		return message, errors.New("handshake response reserved bytes must be zero")

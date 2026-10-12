@@ -180,6 +180,11 @@ func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Sessi
 			continue
 		}
 
+		if buf[0] != noise.HandshakeResponseType {
+			log.Printf("invalid handshake response type: got %d, want %d", buf[0], noise.HandshakeResponseType)
+			// handleHandshakeResponse(buf[:n])
+		}
+
 		opened, err := session.Open(buf[:n])
 		if err != nil {
 			log.Printf("could not open packet from UDP peer %s: %v", source, err)
@@ -233,4 +238,7 @@ func handleHandshakeInitiation(buf []byte, source *net.UDPAddr, privateKey noise
 		return nil
 	}
 	return response.MarshalBinary()
+}
+
+func handleHandshakeResponse(buf []byte, privateKey noise.PrivateKey) {
 }
