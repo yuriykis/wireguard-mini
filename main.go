@@ -67,8 +67,13 @@ func main() {
 	}()
 	log.Printf("UDP listening on %s, peer %s", udpConn.LocalAddr(), peerAddr)
 
+	var (
+		initiation                   noise.HandshakeInitiation
+		initiatorEphemeralPrivateKey noise.PrivateKey
+		handshakeState               noise.HandshakeState
+	)
 	if config.Initiator {
-		initiation, _, _, err := noise.CreateInitiation(config.PrivateKey, config.PeerPublicKey)
+		initiation, initiatorEphemeralPrivateKey, handshakeState, err = noise.CreateInitiation(config.PrivateKey, config.PeerPublicKey)
 		if err != nil {
 			log.Fatalf("could not create handshake initiation: %v", err)
 		}
@@ -108,7 +113,7 @@ func main() {
 		},
 	}
 
-	go receiveUDPPackets(udpConn, tunFile, &session, config.PrivateKey)
+	go receiveUDPPackets(udpConn, tunFile, &session, config.PrivateKey, initiatorEphemeralPrivateKey, handshakeState)
 
 	buf := make([]byte, 65535)
 
@@ -154,7 +159,7 @@ func main() {
 	}
 }
 
-func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Session, privateKey noise.PrivateKey) {
+func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Session, privateKey noise.PrivateKey, initiatorEphemeralPrivateKey noise.PrivateKey, handshakeState noise.HandshakeState) {
 	buf := make([]byte, 65535)
 
 	for {
@@ -180,9 +185,10 @@ func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Sessi
 			continue
 		}
 
-		if buf[0] != noise.HandshakeResponseType {
-			log.Printf("invalid handshake response type: got %d, want %d", buf[0], noise.HandshakeResponseType)
-			// handleHandshakeResponse(buf[:n])
+		if buf[0] == noise.HandshakeResponseType {
+			log.Printf("handshake response received=%d peer=%s", n, source)
+			handleHandshakeResponse(buf[:n], privateKey, initiatorEphemeralPrivateKey, handshakeState)
+			continue
 		}
 
 		opened, err := session.Open(buf[:n])
@@ -240,5 +246,14 @@ func handleHandshakeInitiation(buf []byte, source *net.UDPAddr, privateKey noise
 	return response.MarshalBinary()
 }
 
-func handleHandshakeResponse(buf []byte, privateKey noise.PrivateKey) {
+func handleHandshakeResponse(buf []byte, privateKey noise.PrivateKey, initiatorEphemeralPrivateKey noise.PrivateKey, handshakeState noise.HandshakeState) {
+	response, _, err := noise.ConsumeResponse(privateKey, initiatorEphemeralPrivateKey, buf, handshakeState)
+	if err != nil {
+		log.Printf("could not consume handshake response: %v", err)
+		return
+	}
+	log.Printf(
+		"handshake response consumed responderEphemeralPublicKey.=%s",
+		base64.StdEncoding.EncodeToString(response.UnencryptedEphemeral[:]),
+	)
 }
