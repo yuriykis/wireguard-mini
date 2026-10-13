@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/base64"
-	"flag"
 	"io"
 	"log"
 	"net"
@@ -13,32 +12,15 @@ import (
 )
 
 func main() {
-	listenFlag := flag.String("listen", "", "local UDP address (for example 192.0.2.1:51820)")
-	peerFlag := flag.String("peer", "", "peer UDP endpoint (for example 192.0.2.2:51820)")
-	tunAddressFlag := flag.String("tun-address", "", "local TUN IPv4 address (for example 10.0.0.1/24)")
-	configFlag := flag.String("config", "", "JSON file with the role and keys (for example left.json)")
-	flag.Parse()
+	flags := parseFlags()
 
-	if *listenFlag == "" {
-		log.Fatal("-listen is required")
-	}
-	if *peerFlag == "" {
-		log.Fatal("-peer is required")
-	}
-	if *tunAddressFlag == "" {
-		log.Fatal("-tun-address is required")
-	}
-	if *configFlag == "" {
-		log.Fatal("-config is required")
-	}
-
-	config, err := loadConfig(*configFlag)
+	config, err := loadConfig(flags.config)
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("config loaded from %s, initiator=%t", *configFlag, config.Initiator)
+	log.Printf("config loaded from %s, initiator=%t", flags.config, config.Initiator)
 
-	tunIP, tunNetwork, err := net.ParseCIDR(*tunAddressFlag)
+	tunIP, tunNetwork, err := net.ParseCIDR(flags.tunAddress)
 	if err != nil {
 		log.Fatalf("invalid -tun-address: %v", err)
 	}
@@ -47,11 +29,11 @@ func main() {
 		log.Fatal("-tun-address must be an IPv4 CIDR")
 	}
 
-	listenAddr, err := net.ResolveUDPAddr("udp4", *listenFlag)
+	listenAddr, err := net.ResolveUDPAddr("udp4", flags.listen)
 	if err != nil {
 		log.Fatalf("invalid -listen address: %v", err)
 	}
-	peerAddr, err := net.ResolveUDPAddr("udp4", *peerFlag)
+	peerAddr, err := net.ResolveUDPAddr("udp4", flags.peer)
 	if err != nil {
 		log.Fatalf("invalid -peer address: %v", err)
 	}
@@ -101,7 +83,7 @@ func main() {
 	if err := tun.SetIPv4Address("tun0", tunIP, tunNetwork.Mask); err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("tun0 address set to %s", *tunAddressFlag)
+	log.Printf("tun0 address set to %s", flags.tunAddress)
 	if err := tun.SetUp("tun0"); err != nil {
 		log.Fatal(err)
 	}
