@@ -20,15 +20,6 @@ func main() {
 	}
 	log.Printf("config loaded from %s, initiator=%t", flags.config, config.Initiator)
 
-	tunIP, tunNetwork, err := net.ParseCIDR(flags.tunAddress)
-	if err != nil {
-		log.Fatalf("invalid -tun-address: %v", err)
-	}
-	_, addressBits := tunNetwork.Mask.Size()
-	if tunIP.To4() == nil || addressBits != 32 {
-		log.Fatal("-tun-address must be an IPv4 CIDR")
-	}
-
 	peerAddr, err := net.ResolveUDPAddr("udp4", flags.peer)
 	if err != nil {
 		log.Fatalf("invalid -peer address: %v", err)
@@ -50,28 +41,13 @@ func main() {
 		initiatorEphemeralPrivateKey, handshakeState = sendHandshakeInitiation(udpConn, peerAddr, config)
 	}
 
-	tunFile, err := tun.Open("tun0")
-	if err != nil {
-		log.Fatal(err)
-	}
+	tunFile := setupTUN(flags.tunAddress)
 	defer func() {
 		if err := tunFile.Close(); err != nil {
 			log.Printf("could not close tun0: %v", err)
 		}
 	}()
-	log.Print("tun0 created, Ctrl-C to remove it")
-	if err := tun.SetMTU("tun0", 1420); err != nil {
-		log.Fatal(err)
-	}
-	log.Print("tun0 MTU set to 1420")
-	if err := tun.SetIPv4Address("tun0", tunIP, tunNetwork.Mask); err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("tun0 address set to %s", flags.tunAddress)
-	if err := tun.SetUp("tun0"); err != nil {
-		log.Fatal(err)
-	}
-	log.Print("tun0 is up")
+
 	session := noise.Session{
 		Keys: noise.TransportKeys{
 			Send:    [noise.HashSize]byte{1},
@@ -135,6 +111,36 @@ func listenUDP(listen string) *net.UDPConn {
 		log.Fatalf("could not listen on UDP %s: %v", listenAddr, err)
 	}
 	return udpConn
+}
+
+func setupTUN(tunAddress string) *os.File {
+	tunIP, tunNetwork, err := net.ParseCIDR(tunAddress)
+	if err != nil {
+		log.Fatalf("invalid -tun-address: %v", err)
+	}
+	_, addressBits := tunNetwork.Mask.Size()
+	if tunIP.To4() == nil || addressBits != 32 {
+		log.Fatal("-tun-address must be an IPv4 CIDR")
+	}
+
+	tunFile, err := tun.Open("tun0")
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Print("tun0 created, Ctrl-C to remove it")
+	if err := tun.SetMTU("tun0", 1420); err != nil {
+		log.Fatal(err)
+	}
+	log.Print("tun0 MTU set to 1420")
+	if err := tun.SetIPv4Address("tun0", tunIP, tunNetwork.Mask); err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("tun0 address set to %s", tunAddress)
+	if err := tun.SetUp("tun0"); err != nil {
+		log.Fatal(err)
+	}
+	log.Print("tun0 is up")
+	return tunFile
 }
 
 func sendHandshakeInitiation(udpConn *net.UDPConn, peerAddr *net.UDPAddr, config config) (noise.PrivateKey, noise.HandshakeState) {
