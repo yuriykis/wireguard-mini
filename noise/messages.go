@@ -30,7 +30,7 @@ const (
 
 	TransportDataMinSize = 32
 
-	transportDataType byte = 4
+	TransportDataType byte = 4
 
 	transportReceiverIndexOffset   = 4
 	transportCounterOffset         = 8
@@ -139,7 +139,7 @@ type TransportData struct {
 // MarshalBinary encodes a transport data message in WireGuard's wire format.
 func (m TransportData) MarshalBinary() []byte {
 	data := make([]byte, transportEncryptedPacketOffset+len(m.EncryptedPacket))
-	data[0] = transportDataType
+	data[0] = TransportDataType
 	binary.LittleEndian.PutUint32(data[transportReceiverIndexOffset:transportCounterOffset], m.ReceiverIndex)
 	binary.LittleEndian.PutUint64(data[transportCounterOffset:transportEncryptedPacketOffset], m.Counter)
 	copy(data[transportEncryptedPacketOffset:], m.EncryptedPacket)
@@ -154,8 +154,8 @@ func ParseTransportData(data []byte) (TransportData, error) {
 	if len(data) < TransportDataMinSize {
 		return message, fmt.Errorf("invalid transport data length: got %d, want at least %d", len(data), TransportDataMinSize)
 	}
-	if data[0] != transportDataType {
-		return message, fmt.Errorf("invalid transport data type: got %d, want %d", data[0], transportDataType)
+	if data[0] != TransportDataType {
+		return message, fmt.Errorf("invalid transport data type: got %d, want %d", data[0], TransportDataType)
 	}
 	if data[1] != 0 || data[2] != 0 || data[3] != 0 {
 		return message, errors.New("transport data reserved bytes must be zero")

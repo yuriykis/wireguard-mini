@@ -113,67 +113,23 @@ func (d *device) receiveLoop() {
 			return
 		}
 
-		if buf[0] == noise.HandshakeInitiationType {
-			log.Printf("handshake initiation received=%d peer=%s", n, source)
-			response := handleHandshakeInitiation(buf[:n], source, d.config.PrivateKey)
-			if response == nil {
-				continue
-			}
-
-			written, err := d.conn.WriteToUDP(response, source)
-			if err != nil {
-				log.Printf("could not send handshake response to UDP peer %s: %v", source, err)
-				continue
-			}
-			log.Printf("handshake response sent=%d peer=%s", written, source)
-			continue
+		switch buf[0] {
+		case noise.HandshakeInitiationType:
+			d.handleInitiation(buf[:n], source)
+		case noise.HandshakeResponseType:
+			d.handleResponse(buf[:n], source)
+		case noise.TransportDataType:
+			d.handleTransportData(buf[:n], source)
 		}
-
-		if buf[0] == noise.HandshakeResponseType {
-			log.Printf("handshake response received=%d peer=%s", n, source)
-			handleHandshakeResponse(buf[:n], d.config.PrivateKey, d.initiatorEphemeralPrivateKey, d.handshakeState)
-			continue
-		}
-
-		opened, err := d.session.Open(buf[:n])
-		if err != nil {
-			log.Printf("could not open packet from UDP peer %s: %v", source, err)
-			continue
-		}
-
-		packet, err := parseIPv4Packet(opened)
-		if err != nil {
-			log.Printf("invalid packet from UDP peer %s: %v", source, err)
-			continue
-		}
-
-		log.Printf(
-			"received=%d peer=%s protocol=%d source=%s destination=%s",
-			n,
-			source,
-			packet.protocol,
-			packet.source,
-			packet.destination,
-		)
-
-		written, err := d.tunFile.Write(opened)
-		if err != nil {
-			log.Printf("could not write packet to TUN: %v", err)
-			continue
-		}
-		if written != len(opened) {
-			log.Printf("could not write packet to TUN: %v", io.ErrShortWrite)
-			continue
-		}
-		log.Printf("written=%d to=tun0", written)
 	}
 }
 
-func handleHandshakeInitiation(buf []byte, source *net.UDPAddr, privateKey noise.PrivateKey) []byte {
-	initiation, initiatorPubKey, timestamp, state, err := noise.ConsumeInitiation(privateKey, buf)
+func (d *device) handleInitiation(msg []byte, source *net.UDPAddr) {
+	log.Printf("handshake initiation received=%d peer=%s", len(msg), source)
+	initiation, initiatorPubKey, timestamp, state, err := noise.ConsumeInitiation(d.config.PrivateKey, msg)
 	if err != nil {
 		log.Printf("could not consume handshake initiation from UDP peer %s: %v", source, err)
-		return nil
+		return
 	}
 	log.Printf(
 		"handshake initiation consumed peer=%s initiatorPubKey=%s timestamp=%x",
@@ -185,13 +141,20 @@ func handleHandshakeInitiation(buf []byte, source *net.UDPAddr, privateKey noise
 	response, _, err := noise.CreateResponse(initiatorPubKey, initiation, state)
 	if err != nil {
 		log.Printf("could not create handshake response for UDP peer %s: %v", source, err)
-		return nil
+		return
 	}
-	return response.MarshalBinary()
+
+	written, err := d.conn.WriteToUDP(response.MarshalBinary(), source)
+	if err != nil {
+		log.Printf("could not send handshake response to UDP peer %s: %v", source, err)
+		return
+	}
+	log.Printf("handshake response sent=%d peer=%s", written, source)
 }
 
-func handleHandshakeResponse(buf []byte, privateKey noise.PrivateKey, initiatorEphemeralPrivateKey noise.PrivateKey, handshakeState noise.HandshakeState) {
-	response, _, err := noise.ConsumeResponse(privateKey, initiatorEphemeralPrivateKey, buf, handshakeState)
+func (d *device) handleResponse(msg []byte, source *net.UDPAddr) {
+	log.Printf("handshake response received=%d peer=%s", len(msg), source)
+	response, _, err := noise.ConsumeResponse(d.config.PrivateKey, d.initiatorEphemeralPrivateKey, msg, d.handshakeState)
 	if err != nil {
 		log.Printf("could not consume handshake response: %v", err)
 		return
@@ -200,4 +163,38 @@ func handleHandshakeResponse(buf []byte, privateKey noise.PrivateKey, initiatorE
 		"handshake response consumed responderEphemeralPublicKey.=%s",
 		base64.StdEncoding.EncodeToString(response.UnencryptedEphemeral[:]),
 	)
+}
+
+func (d *device) handleTransportData(msg []byte, source *net.UDPAddr) {
+	opened, err := d.session.Open(msg)
+	if err != nil {
+		log.Printf("could not open packet from UDP peer %s: %v", source, err)
+		return
+	}
+
+	packet, err := parseIPv4Packet(opened)
+	if err != nil {
+		log.Printf("invalid packet from UDP peer %s: %v", source, err)
+		return
+	}
+
+	log.Printf(
+		"received=%d peer=%s protocol=%d source=%s destination=%s",
+		len(msg),
+		source,
+		packet.protocol,
+		packet.source,
+		packet.destination,
+	)
+
+	written, err := d.tunFile.Write(opened)
+	if err != nil {
+		log.Printf("could not write packet to TUN: %v", err)
+		return
+	}
+	if written != len(opened) {
+		log.Printf("could not write packet to TUN: %v", io.ErrShortWrite)
+		return
+	}
+	log.Printf("written=%d to=tun0", written)
 }
