@@ -57,8 +57,8 @@ func main() {
 		},
 	}
 
-	go receiveUDPPackets(udpConn, tunFile, &session, config.PrivateKey, initiatorEphemeralPrivateKey, handshakeState)
-	go sendTUNPackets(tunFile, udpConn, peerAddr, &session)
+	go receivePackets(udpConn, tunFile, &session, config.PrivateKey, initiatorEphemeralPrivateKey, handshakeState)
+	go sendPackets(tunFile, udpConn, peerAddr, &session)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -66,7 +66,7 @@ func main() {
 	log.Print("interrupted, shutting down")
 }
 
-func sendTUNPackets(tunFile *os.File, udpConn *net.UDPConn, peerAddr *net.UDPAddr, session *noise.Session) {
+func sendPackets(tunFile *os.File, udpConn *net.UDPConn, peerAddr *net.UDPAddr, session *noise.Session) {
 	buf := make([]byte, 65535)
 
 	for {
@@ -166,7 +166,7 @@ func sendHandshakeInitiation(udpConn *net.UDPConn, peerAddr *net.UDPAddr, config
 	return ephemeralPrivateKey, handshakeState
 }
 
-func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Session, privateKey noise.PrivateKey, initiatorEphemeralPrivateKey noise.PrivateKey, handshakeState noise.HandshakeState) {
+func receivePackets(conn *net.UDPConn, tunFile *os.File, session *noise.Session, privateKey noise.PrivateKey, initiatorEphemeralPrivateKey noise.PrivateKey, handshakeState noise.HandshakeState) {
 	buf := make([]byte, 65535)
 
 	for {
