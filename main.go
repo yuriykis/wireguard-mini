@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"io"
 	"log"
 	"net"
 	"os"
+	"os/signal"
 
 	"wireguard-mini/noise"
 	"wireguard-mini/tun"
@@ -56,7 +58,15 @@ func main() {
 	}
 
 	go receiveUDPPackets(udpConn, tunFile, &session, config.PrivateKey, initiatorEphemeralPrivateKey, handshakeState)
+	go sendTUNPackets(tunFile, udpConn, peerAddr, &session)
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	<-ctx.Done()
+	log.Print("interrupted, shutting down")
+}
+
+func sendTUNPackets(tunFile *os.File, udpConn *net.UDPConn, peerAddr *net.UDPAddr, session *noise.Session) {
 	buf := make([]byte, 65535)
 
 	for {
