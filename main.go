@@ -29,19 +29,12 @@ func main() {
 		log.Fatal("-tun-address must be an IPv4 CIDR")
 	}
 
-	listenAddr, err := net.ResolveUDPAddr("udp4", flags.listen)
-	if err != nil {
-		log.Fatalf("invalid -listen address: %v", err)
-	}
 	peerAddr, err := net.ResolveUDPAddr("udp4", flags.peer)
 	if err != nil {
 		log.Fatalf("invalid -peer address: %v", err)
 	}
 
-	udpConn, err := net.ListenUDP("udp4", listenAddr)
-	if err != nil {
-		log.Fatalf("could not listen on UDP %s: %v", listenAddr, err)
-	}
+	udpConn := listenUDP(flags.listen)
 	defer func() {
 		if err := udpConn.Close(); err != nil {
 			log.Printf("could not close UDP socket: %v", err)
@@ -139,6 +132,18 @@ func main() {
 		}
 		log.Printf("sent=%d peer=%s", written, peerAddr)
 	}
+}
+
+func listenUDP(listen string) *net.UDPConn {
+	listenAddr, err := net.ResolveUDPAddr("udp4", listen)
+	if err != nil {
+		log.Fatalf("invalid -listen address: %v", err)
+	}
+	udpConn, err := net.ListenUDP("udp4", listenAddr)
+	if err != nil {
+		log.Fatalf("could not listen on UDP %s: %v", listenAddr, err)
+	}
+	return udpConn
 }
 
 func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Session, privateKey noise.PrivateKey, initiatorEphemeralPrivateKey noise.PrivateKey, handshakeState noise.HandshakeState) {
