@@ -7,7 +7,12 @@ import (
 )
 
 func TestSealCanBeDecryptedWithSendKey(t *testing.T) {
-	sender := Session{Keys: TransportKeys{Send: [HashSize]byte{1}, Receive: [HashSize]byte{2}}}
+	sendKey := [HashSize]byte{1}
+	var sender Session
+	sender.SetKeys(TransportKeys{
+		Send:    sendKey,
+		Receive: [HashSize]byte{2},
+	})
 	packet := []byte("ping packet")
 
 	sealed, err := sender.Seal(packet)
@@ -16,14 +21,21 @@ func TestSealCanBeDecryptedWithSendKey(t *testing.T) {
 	message, err := ParseTransportData(sealed)
 	require.NoError(t, err)
 
-	decrypted, err := DecryptTransportData(sender.Keys.Send, message.Counter, message.EncryptedPacket)
+	decrypted, err := DecryptTransportData(sendKey, message.Counter, message.EncryptedPacket)
 	require.NoError(t, err)
 	require.Equal(t, packet, decrypted)
 }
 
 func TestOpenDecryptsPacketSealedByPeer(t *testing.T) {
-	sender := Session{Keys: TransportKeys{Send: [HashSize]byte{1}, Receive: [HashSize]byte{2}}}
-	receiver := Session{Keys: TransportKeys{Send: [HashSize]byte{2}, Receive: [HashSize]byte{1}}}
+	var sender, receiver Session
+	sender.SetKeys(TransportKeys{
+		Send:    [HashSize]byte{1},
+		Receive: [HashSize]byte{2},
+	})
+	receiver.SetKeys(TransportKeys{
+		Send:    [HashSize]byte{2},
+		Receive: [HashSize]byte{1},
+	})
 	packet := []byte("ping packet")
 
 	sealed, err := sender.Seal(packet)

@@ -27,12 +27,6 @@ func newDevice(conn *net.UDPConn, tunFile *os.File, peerAddr *net.UDPAddr, confi
 		tunFile:  tunFile,
 		peerAddr: peerAddr,
 		config:   config,
-		session: noise.Session{
-			Keys: noise.TransportKeys{
-				Send:    [noise.HashSize]byte{1},
-				Receive: [noise.HashSize]byte{1},
-			},
-		},
 	}
 }
 
@@ -138,11 +132,13 @@ func (d *device) handleInitiation(msg []byte, source *net.UDPAddr) {
 		timestamp,
 	)
 
-	response, _, err := noise.CreateResponse(initiatorPubKey, initiation, state)
+	response, state, err := noise.CreateResponse(initiatorPubKey, initiation, state)
 	if err != nil {
 		log.Printf("could not create handshake response for UDP peer %s: %v", source, err)
 		return
 	}
+
+	d.session.SetKeys(state.DeriveTransportKeys())
 
 	written, err := d.conn.WriteToUDP(response.MarshalBinary(), source)
 	if err != nil {
@@ -154,11 +150,14 @@ func (d *device) handleInitiation(msg []byte, source *net.UDPAddr) {
 
 func (d *device) handleResponse(msg []byte, source *net.UDPAddr) {
 	log.Printf("handshake response received=%d peer=%s", len(msg), source)
-	response, _, err := noise.ConsumeResponse(d.config.PrivateKey, d.initiatorEphemeralPrivateKey, msg, d.handshakeState)
+	response, state, err := noise.ConsumeResponse(d.config.PrivateKey, d.initiatorEphemeralPrivateKey, msg, d.handshakeState)
 	if err != nil {
 		log.Printf("could not consume handshake response: %v", err)
 		return
 	}
+
+	d.session.SetKeys(state.DeriveTransportKeys())
+
 	log.Printf(
 		"handshake response consumed responderEphemeralPublicKey.=%s",
 		base64.StdEncoding.EncodeToString(response.UnencryptedEphemeral[:]),
