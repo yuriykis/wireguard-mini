@@ -45,3 +45,13 @@ func TestOpenDecryptsPacketSealedByPeer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, packet, opened)
 }
+
+func TestSealAndOpenRejectSessionWithoutKeys(t *testing.T) {
+	var session Session
+
+	_, err := session.Seal([]byte("ping packet"))
+	require.ErrorIs(t, err, errNoKeys)
+
+	_, err = session.Open(make([]byte, TransportDataMinSize))
+	require.ErrorIs(t, err, errNoKeys)
+}

@@ -12,6 +12,12 @@ type TransportKeys struct {
 	Receive [HashSize]byte
 }
 
+// Empty returns true if either of the two session keys is zero.
+func (keys TransportKeys) Empty() bool {
+	zero := [HashSize]byte{}
+	return keys.Send == zero || keys.Receive == zero
+}
+
 // DeriveTransportKeys turns the final chaining key into the pair of session keys.
 func (state *HandshakeState) DeriveTransportKeys() TransportKeys {
 	first, second := kdf2(state.ChainingKey[:], nil)

@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+var errNoKeys = errors.New("session keys not set")
+
 // Session holds everything one peer needs to exchange transport data after a handshake.
 type Session struct {
 	mu          sync.Mutex
@@ -29,6 +31,10 @@ func (session *Session) Seal(packet []byte) ([]byte, error) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
+	if session.keys.Empty() {
+		return nil, errNoKeys
+	}
+
 	counter := session.sendCounter
 	session.sendCounter++
 
@@ -47,6 +53,10 @@ func (session *Session) Seal(packet []byte) ([]byte, error) {
 func (session *Session) Open(data []byte) ([]byte, error) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
+
+	if session.keys.Empty() {
+		return nil, errNoKeys
+	}
 
 	message, err := ParseTransportData(data)
 	if err != nil {
