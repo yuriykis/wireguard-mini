@@ -43,20 +43,11 @@ func main() {
 	log.Printf("UDP listening on %s, peer %s", udpConn.LocalAddr(), peerAddr)
 
 	var (
-		initiation                   noise.HandshakeInitiation
 		initiatorEphemeralPrivateKey noise.PrivateKey
 		handshakeState               noise.HandshakeState
 	)
 	if config.Initiator {
-		initiation, initiatorEphemeralPrivateKey, handshakeState, err = noise.CreateInitiation(config.PrivateKey, config.PeerPublicKey)
-		if err != nil {
-			log.Fatalf("could not create handshake initiation: %v", err)
-		}
-		written, err := udpConn.WriteToUDP(initiation.MarshalBinary(), peerAddr)
-		if err != nil {
-			log.Fatalf("could not send handshake initiation: %v", err)
-		}
-		log.Printf("handshake initiation sent=%d peer=%s", written, peerAddr)
+		initiatorEphemeralPrivateKey, handshakeState = sendHandshakeInitiation(udpConn, peerAddr, config)
 	}
 
 	tunFile, err := tun.Open("tun0")
@@ -144,6 +135,19 @@ func listenUDP(listen string) *net.UDPConn {
 		log.Fatalf("could not listen on UDP %s: %v", listenAddr, err)
 	}
 	return udpConn
+}
+
+func sendHandshakeInitiation(udpConn *net.UDPConn, peerAddr *net.UDPAddr, config config) (noise.PrivateKey, noise.HandshakeState) {
+	initiation, ephemeralPrivateKey, handshakeState, err := noise.CreateInitiation(config.PrivateKey, config.PeerPublicKey)
+	if err != nil {
+		log.Fatalf("could not create handshake initiation: %v", err)
+	}
+	written, err := udpConn.WriteToUDP(initiation.MarshalBinary(), peerAddr)
+	if err != nil {
+		log.Fatalf("could not send handshake initiation: %v", err)
+	}
+	log.Printf("handshake initiation sent=%d peer=%s", written, peerAddr)
+	return ephemeralPrivateKey, handshakeState
 }
 
 func receiveUDPPackets(conn *net.UDPConn, tunFile *os.File, session *noise.Session, privateKey noise.PrivateKey, initiatorEphemeralPrivateKey noise.PrivateKey, handshakeState noise.HandshakeState) {
