@@ -107,6 +107,11 @@ func (d *device) receiveLoop() {
 			return
 		}
 
+		// drop empty packets
+		if n < 4 {
+			continue
+		}
+
 		switch buf[0] {
 		case noise.HandshakeInitiationType:
 			d.handleInitiation(buf[:n], source)
