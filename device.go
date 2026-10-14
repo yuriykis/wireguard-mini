@@ -143,6 +143,7 @@ func (d *device) handleInitiation(msg []byte, source *net.UDPAddr) {
 		return
 	}
 
+	d.session.SetRemoteIndex(initiation.SenderIndex)
 	d.session.SetKeys(state.DeriveTransportKeys())
 
 	written, err := d.conn.WriteToUDP(response.MarshalBinary(), source)
@@ -161,6 +162,7 @@ func (d *device) handleResponse(msg []byte, source *net.UDPAddr) {
 		return
 	}
 
+	d.session.SetRemoteIndex(response.SenderIndex)
 	d.session.SetKeys(state.DeriveTransportKeys())
 
 	log.Printf(

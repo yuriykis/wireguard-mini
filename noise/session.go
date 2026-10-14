@@ -26,6 +26,13 @@ func (session *Session) SetKeys(keys TransportKeys) {
 	session.replay = ReplayWindow{}
 }
 
+// SetRemoteIndex stores the index the peer expects in transport data sent to it.
+func (session *Session) SetRemoteIndex(remoteIndex uint32) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	session.RemoteIndex = remoteIndex
+}
+
 // Seal encrypts a packet read from TUN into a transport data message.
 func (session *Session) Seal(packet []byte) ([]byte, error) {
 	session.mu.Lock()
